@@ -73,28 +73,29 @@ function train()
     transfer = device ∘ precision
     @show transfer
 
-    log_dir = "/home/pxl-th/projects/Monodepth2.jl/logs_2"
-    save_dir = "/home/pxl-th/projects/Monodepth2.jl/models_2"
+    log_dir = "./out/logs"
+    save_dir = "./out/models"
 
-    isdir(log_dir) || mkdir(log_dir)
-    isdir(save_dir) || mkdir(save_dir)
+    isdir(log_dir) || mkpath(log_dir)
+    isdir(save_dir) || mkpath(save_dir)
 
     grayscale = true
     in_channels = grayscale ? 1 : 3
     augmentations = FlipX(0.5)
     target_size=(128, 416)
 
-    kitty_dir = "/home/pxl-th/projects/datasets/kitty-dataset"
-    datasets = [
-        KittyDataset(kitty_dir, s; target_size, augmentations)
-        for s in map(i -> @sprintf("%02d", i), 0:21)]
+    # kitty_dir = "/home/pxl-th/projects/datasets/kitty-dataset"
+    # datasets = [
+    #     KittyDataset(kitty_dir, s; target_size, augmentations)
+    #     for s in map(i -> @sprintf("%02d", i), 0:21)]
 
-    # dtk_dir = "/home/pxl-th/projects/datasets/depth10k"
-    # dtk_dataset = Depth10k(
-    #     joinpath(dtk_dir, "imgs"),
-    #     readlines(joinpath(dtk_dir, "trainable-nonstatic"));
-    #     augmentations, grayscale)
-    # push!(datasets, dtk_dataset)
+    datasets = []
+    dtk_dir = "../depth10k"
+    dtk_dataset = Depth10k(
+        joinpath(dtk_dir, "imgs"),
+        readlines(joinpath(dtk_dir, "trainable-nonstatic"));
+        augmentations, grayscale)
+    push!(datasets, dtk_dataset)
 
     dchain = DChain(datasets)
     dataset = datasets[begin]
@@ -248,7 +249,7 @@ function eval_video()
 end
 
 function refine_dtk()
-    dtk_dir = "/home/pxl-th/projects/datasets/depth10k"
+    dtk_dir = "../depth10k"
     image_dir = joinpath(dtk_dir, "imgs")
     image_files = readlines(joinpath(dtk_dir, "trainable"))
     dataset = Depth10k(image_dir, image_files)
@@ -261,7 +262,9 @@ function refine_dtk()
     end
 end
 
-# train()
+# refine_dtk()
+
+train()
 # simple_depth()
 # eval_video()
 # eval_image()
