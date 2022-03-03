@@ -40,6 +40,9 @@ function DepthDecoder(;encoder_channels, scale_levels, embedding_levels)
         push!(branches, [
             BranchBlock(in_channels[bid], skip_channels[bid], decoder_channels[bid])
             for bid in bstart:slevel])
+        # TODO: set correct number of output channels (color+density) 
+        # TODO: sigmoid activation for output?
+
         push!(decoders, DecoderBlock(Conv((3, 3), decoder_channels[slevel]=>1, σ)))
         bstart = slevel + 1
     end

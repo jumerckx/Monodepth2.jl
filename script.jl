@@ -107,6 +107,11 @@ train_cache = TrainCache(
     transfer(Array(dataset.K)), transfer(Array(dataset.invK)),
     dataset.target_id, dataset.source_ids, scales)
 
+train_cache.backprojections.coordinates
+train_cache.projections.normalizer
+train_cache.K
+train_cache.K
+
 encoder = ResidualNetwork(18; in_channels, classes=nothing)
 encoder_channels = collect(encoder.stages)
 model = transfer(Model(
@@ -123,4 +128,13 @@ trainmode!(model)
 x = transfer(first(DataLoader(dchain, 4)))
 
 CUDA.allowscalar(false)
-out = CUDA.@time model(x, train_cache.source_ids, train_cache.target_id)
+disparities, poses = CUDA.@time model(x, train_cache.source_ids, train_cache.target_id)
+
+disparities
+
+disparities = map(disparities) do d
+    H, W, C, _ = size(d)
+    reshape(d, (H, W, C, 32, :))
+end
+
+size.(disparities)
