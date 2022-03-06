@@ -133,8 +133,8 @@ disparities, poses = CUDA.@time model(x, train_cache.source_ids, train_cache.tar
 disparities
 
 disparities = map(disparities) do d
-    H, W, C, _ = size(d)
-    reshape(d, (H, W, C, 32, :))
+    W, H, C, _ = size(d)
+    reshape(d, (W, H, C, 32, :))
 end
 
 size.(disparities)
