@@ -41,21 +41,14 @@ Base.@kwdef struct Params
     batch_size::Int64
 end
 
-struct TrainCache{S, B, P, I}
+struct TrainCache{S}
     ssim::S
-    backprojections::B
-    projections::P
-
-    K::I
-    invK::I
-
-    target_id::Int64
-    source_ids::Vector{Int64}
     scales::Vector{Float64}
 end
 
 include("dtk.jl")
 include("kitty.jl")
+include("nyudataset.jl")
 include("dchain.jl")
 
 include("io_utils.jl")
@@ -66,6 +59,16 @@ include("model.jl")
 include("simple_depth.jl")
 
 include("training.jl")
+
+# img_dir = "../nyu_data/data/nyu2_train"
+# datasets = [
+#     NYUDataset(joinpath(img_dir, dir), (240,320); augmentations)
+#     for dir in readdir(img_dir)
+# ]
+
+# dchain = DChain(datasets)
+
+# dchain[1][1]
 
 function train()
     device = gpu
@@ -82,20 +85,13 @@ function train()
     grayscale = true
     in_channels = grayscale ? 1 : 3
     augmentations = FlipX(0.5)
-    target_size=(128, 416)
+    target_size=(240, 320)
 
-    # kitty_dir = "/home/pxl-th/projects/datasets/kitty-dataset"
-    # datasets = [
-    #     KittyDataset(kitty_dir, s; target_size, augmentations)
-    #     for s in map(i -> @sprintf("%02d", i), 0:21)]
-
-    datasets = []
-    dtk_dir = "../depth10k"
-    dtk_dataset = Depth10k(
-        joinpath(dtk_dir, "imgs"),
-        readlines(joinpath(dtk_dir, "trainable-nonstatic"));
-        augmentations, grayscale)
-    push!(datasets, dtk_dataset)
+    img_dir = "../nyu_data/data/nyu2_train"
+    datasets = [
+        NYUDataset(joinpath(img_dir, dir), target_size; augmentations)
+        for dir in readdir(img_dir)
+    ]
 
     dchain = DChain(datasets)
     dataset = datasets[begin]
@@ -110,10 +106,7 @@ function train()
 
     train_cache = TrainCache(
         transfer(SSIM()),
-        transfer(Backproject(; width, height)),
-        transfer(Project(; width, height)),
-        transfer(Array(dataset.K)), transfer(Array(dataset.invK)),
-        dataset.target_id, dataset.source_ids, scales)
+        scales)
 
     encoder = ResidualNetwork(18; in_channels, classes=nothing)
     encoder_channels = collect(encoder.stages)

@@ -10,7 +10,7 @@ end
 """
 function NYUDataset(image_dir, target_size; augmentations = nothing)
 
-    total_length = length(readdir(image_dir))
+    total_length = length(readdir(image_dir)) ÷ 2
 
     height, width = target_size
 
