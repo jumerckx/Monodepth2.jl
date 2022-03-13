@@ -67,7 +67,7 @@ include("simple_depth.jl")
 
 include("training.jl")
 
-function train()
+function train(; model=nothing, θ=nothing, η=1e-4)
     device = gpu
     precision = f32
     transfer = device ∘ precision
@@ -79,7 +79,7 @@ function train()
     isdir(log_dir) || mkpath(log_dir)
     isdir(save_dir) || mkpath(save_dir)
 
-    grayscale = true
+    grayscale = false
     in_channels = grayscale ? 1 : 3
     augmentations = FlipX(0.5)
     target_size=(128, 416)
@@ -115,15 +115,20 @@ function train()
         transfer(Array(dataset.K)), transfer(Array(dataset.invK)),
         dataset.target_id, dataset.source_ids, scales)
 
-    encoder = ResidualNetwork(18; in_channels, classes=nothing)
-    encoder_channels = collect(encoder.stages)
-    model = transfer(Model(
-        encoder,
-        DepthDecoder(;encoder_channels, scale_levels),
-        PoseDecoder(encoder_channels[end])))
+    if isnothing(model)
+        encoder = ResidualNetwork(18; in_channels, classes=nothing)
+        encoder_channels = collect(encoder.stages)
+        model = transfer(Model(
+            encoder,
+            DepthDecoder(;encoder_channels, scale_levels),
+            PoseDecoder(encoder_channels[end])))
+    end
 
-    θ = Flux.params(model)
-    optimizer = ADAM(1e-4)
+    if isnothing(θ)
+        θ = Flux.params(model)
+    end
+
+    optimizer = ADAM(η)
     trainmode!(model)
 
     # Perform first gradient computation using small batch size.
@@ -177,9 +182,10 @@ function train()
             end)
 
             if do_visualization
-                save_disparity(
-                    disparity[:, :, 1, 1],
-                    joinpath(log_dir, "disp-$epoch-$i.png"))
+                save_disparity(disparity[:, :, 1, 1])
+                # save_disparity(
+                #     disparity[:, :, 1, 1],
+                #     joinpath(log_dir, "disp-$epoch-$i.png"))
                 # save(
                 #     joinpath(log_dir, "loss-$epoch-$i.png"),
                 #     permutedims(vis_loss[:, :, 1, 1], (2, 1)))
@@ -264,9 +270,43 @@ end
 
 # refine_dtk()
 
-train()
+# model = gpu(f32(BSON.load("out/models/2-12500-0.054793365.bson")[:model_host]))
+model = gpu(f32(BSON.load("out/models/7-11000-0.009544602.bson")[:model_host]))
+
+
+train(; model, θ=params(model.depth_decoder.decoders, model.pose_decoder), η=1e-5)
+train(; model, η=1e-5)
+
+testmode!(model)
+
+imgs = readdir("../depth10k/imgs")
+begin
+    img = "../depth10k/imgs/$(imgs[rand(1:length(imgs))])"
+
+    x = load(img)[:, 1:416];
+    # x = imresize(Gray{Float32}.(x), target_resolution)
+
+    x = Float32.(channelview(x))
+    x = permutedims(x, (3, 2, 1))
+    x = gpu(Flux.unsqueeze(x, 4))
+
+    disparity = permutedims(cpu(eval_disparity(model, x)[end])[:, :, 1, 1], (2, 1))
+    heatmap(load(img)[:, 1:416])|>display
+    heatmap(
+            disparity[end:-1:1, :]; c=:jet, aspect_ratio=:equal,
+            colorbar=:none, legend=:none, grid=false, showaxis=false) |>display;
+end
 # simple_depth()
 # eval_video()
 # eval_image()
 
+good_model = cpu(deepcopy(model))
+
 end
+
+
+Gray.(0:0.1:1)
+
+
+
+colorview(Gray, 1 ./ channelview(test))
