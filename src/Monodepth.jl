@@ -275,7 +275,7 @@ model = gpu(f32(BSON.load("out/models/7-11000-0.009544602.bson")[:model_host]))
 
 
 train(; model, θ=params(model.depth_decoder.decoders, model.pose_decoder), η=1e-5)
-train(; model, η=1e-5)
+train(; model, η=1e-4)
 
 testmode!(model)
 

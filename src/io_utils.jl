@@ -6,6 +6,14 @@ function save_disparity(disparity, path)
     png(fig, path)
 end
 
+function save_disparity(disparity)
+    disparity = permutedims(disparity, (2, 1))[end:-1:1, :]
+    fig = heatmap(
+        disparity; c=:thermal, aspect_ratio=:equal,
+        colorbar=:none, legend=:none, grid=false, showaxis=false)
+    display(fig)
+end
+
 function save_warped(warped, path)
     is_grayscale = ndims(warped) == 2 || size(warped, 3) == 1
     if size(warped, 3) == 1
