@@ -1,3 +1,4 @@
 Manifest.toml
 models*/
 logs*/
+.vscode/settings.json
