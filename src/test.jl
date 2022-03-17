@@ -39,7 +39,7 @@ function plane_volume_rendering(rgb, sigma, xyz)
 
     weights = transparency_acc .* alpha  # BxSx1xHxW
 
-    rgb_out = dropdims(sum(sum(weights, dims=4) .* rgb, dims=4), dims=4)
+    rgb_out = dropdims(sum(weights .* rgb, dims=4), dims=4)
 
     # TODO: return depth?
     return rgb_out, transparency_acc, weights
