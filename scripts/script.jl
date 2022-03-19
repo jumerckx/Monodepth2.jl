@@ -2,63 +2,25 @@ using LinearAlgebra
 using Printf
 using Statistics
 
-using Augmentations
-import BSON
+using Monodepth, Augmentations
+# import Monodepth:BSON
 using BSON: @save, @load
 using DataLoaders
-using FileIO
-using ImageCore
-using ImageTransformations
-using MLDataPattern: shuffleobs
-using VideoIO
-using ProgressMeter
-using Plots
-using StaticArrays
-gr()
+# using FileIO
+# using ImageCore
+# using ImageTransformations
+# using MLDataPattern: shuffleobs
+# using VideoIO
+# using ProgressMeter
+# using Plots
+# using StaticArrays
+# gr()
 
-import ChainRulesCore: rrule
-using ChainRulesCore
+# import ChainRulesCore: rrule
+# using ChainRulesCore
 using CUDA
 using Flux
-using ResNet
-
-Base.@kwdef struct Params
-    min_depth::Float64 = 0.1
-    max_depth::Float64 = 100.0
-    disparity_smoothness::Float64 = 1e-3
-    frame_ids::Vector{Int64} = [1, 2, 3]
-
-    automasking::Bool = true
-
-    target_size::Tuple{Int64, Int64} # (width, height)
-    batch_size::Int64
-end
-
-struct TrainCache{S, B, P, I}
-    ssim::S
-    backprojections::B
-    projections::P
-
-    K::I
-    invK::I
-
-    target_id::Int64
-    source_ids::Vector{Int64}
-    scales::Vector{Float64}
-end
-
-include("src/dtk.jl")
-include("src/kitty.jl")
-include("src/dchain.jl")
-
-include("src/io_utils.jl")
-include("src/utils.jl")
-include("src/depth_decoder.jl")
-include("src/pose_decoder.jl")
-include("src/model.jl")
-include("src/simple_depth.jl")
-
-include("src/training.jl")
+using Monodepth.ResNet
 
 device = gpu
 precision = f32
@@ -102,8 +64,8 @@ println(parameters)
 
 train_cache = TrainCache(
     transfer(SSIM()),
-    transfer(Backproject(; width, height)),
-    transfer(Project(; width, height)),
+    transfer(Monodepth.Backproject(; width, height)),
+    transfer(Monodepth.Project(; width, height)),
     transfer(Array(dataset.K)), transfer(Array(dataset.invK)),
     dataset.target_id, dataset.source_ids, scales)
 
@@ -130,6 +92,8 @@ x = transfer(first(DataLoader(dchain, 4)))
 CUDA.allowscalar(false)
 disparities, poses = CUDA.@time model(x, train_cache.source_ids, train_cache.target_id)
 
+Monodepth.f(10)
+
 disparities
 
 disparities = map(disparities) do d
@@ -137,4 +101,6 @@ disparities = map(disparities) do d
     reshape(d, (W, H, C, 32, :))
 end
 
-size.(disparities)
+Monodepth.
+
+Monodepth.get_src_xyz_from_plane_disparity
