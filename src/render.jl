@@ -1,4 +1,4 @@
-import LinearAlgebra:norm, inv
+import LinearAlgebra
 
 function inv!(x)
     pivot, info = CUDA.CUBLAS.getrf_batched!(x, true)
@@ -30,6 +30,7 @@ function get_src_xyz_from_plane_disparity(meshgrid_src_homo, mpi_disparity_src, 
 end
 
 function plane_volume_rendering(rgb, sigma, xyz)
+    W, H, _, N, B = size(rgb)
     diff = permutedims(xyz[:, :, :, 2:end,:] .- xyz[:, :, :, 1:end-1, :], (2, 3, 1, 4, 5))
     dist = cat(norm(diff, dims=3), CUDA.fill(1f3, W, H, 1, 1, B), dims=4) # TODO: TinyNERF gebruikt fill met 1e10
 
@@ -41,7 +42,7 @@ function plane_volume_rendering(rgb, sigma, xyz)
 
     weights = transparency_acc .* alpha  # BxSx1xHxW
 
-    rgb_out = dropdims(sum(sum(weights, dims=4) .* rgb, dims=4), dims=4)
+    rgb_out = dropdims(sum(weights .* rgb, dims=4), dims=4)
 
     # TODO: return depth?
     return rgb_out, transparency_acc, weights
@@ -60,13 +61,14 @@ function get_tgt_xyz_from_plane_disparity(xyz_src, pose)
 end
 
 function sample(src, depth_src, pose, K, K_inv)
+    W, H, _, _ = size(src)
     R = so3_exp_map(pose.rvec)
-    t = pose.tvec
+    t = Flux.unsqueeze(pose.tvec, 2)
     n = transfer([0 0 1])
 
-    temp = reshape(unsqueeze(t ⊠ n, 3) ./ -reshape(depth_src, (1, 1, size(depth_src, 1), size(depth_src, 2))), (3, 3, :))
-    
-    H_tgt_src = K ⊠ (R .- temp) ⊠ K_inv
+    temp = Flux.unsqueeze(t ⊠ n, 3) ./ -reshape(depth_src, (1, 1, size(depth_src, 1), size(depth_src, 2)))
+    # @show size(te mp), size(R)
+    H_tgt_src = K ⊠ (reshape(Flux.unsqueeze(R, 3) .- temp, (3, 3, :))) ⊠ K_inv
     
     H_src_tgt = inv(H_tgt_src)
     
@@ -85,4 +87,5 @@ function sample(src, depth_src, pose, K, K_inv)
     tgt = grid_sample(src, meshgrid_src; padding_mode=:border)
     return tgt, valid_mask
 end
+
 

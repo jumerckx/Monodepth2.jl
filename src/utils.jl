@@ -1,3 +1,7 @@
+device = gpu
+precision = f32
+transfer = device ∘ precision
+
 eye_like(::AbstractArray{T}, shape) where T = Array{T, 2}(I, shape)
 eye_like(::CuArray{T}, shape) where T = CuArray{T, 2}(I, shape)
 @non_differentiable eye_like(::Any...)
