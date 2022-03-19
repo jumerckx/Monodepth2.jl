@@ -82,10 +82,10 @@ function train()
     isdir(log_dir) || mkpath(log_dir)
     isdir(save_dir) || mkpath(save_dir)
 
-    grayscale = true
+    grayscale = false
     in_channels = grayscale ? 1 : 3
     augmentations = FlipX(0.5)
-    target_size=(240, 320)
+    target_size=(384, 512)
 
     img_dir = "../nyu_data/data/nyu2_train"
     datasets = [
@@ -122,19 +122,19 @@ function train()
     # Perform first gradient computation using small batch size.
     println("Precompile grads...")
     for x_host in DataLoader(dchain, 1)
-        x = transfer(x_host)
+        x, y = transfer.(x_host)
 
         println("Forward:")
-        @time train_loss(model, x, nothing, train_cache, parameters, false)[1]
+        @time train_loss(model, x, y, train_cache, parameters, false)[1]
 
         println("Backward:")
         @time begin
             ∇ = gradient(θ) do
-                train_loss(model, x, nothing, train_cache, parameters, false)[1]
+                train_loss(model, x, y, train_cache, parameters, false)[1]
             end
         end
 
-        @show mean(∇[model.pose_decoder.pose[end].weight])
+        # @show mean(∇[model.pose_decoder.pose[end].weight])
         break
     end
     GC.gc()
@@ -148,22 +148,22 @@ function train()
         bar = get_pb(length(loader), "Epoch $epoch / $n_epochs: ")
 
         for (i, x_host) in enumerate(loader)
-            x = transfer(x_host)
+            x, y = transfer.(x_host)
 
             auto_loss = nothing
-            if parameters.automasking
-                auto_loss = automasking_loss(
-                    train_cache.ssim, x, x[:, :, :, train_cache.target_id, :];
-                    source_ids=train_cache.source_ids)
-            end
+            # if parameters.automasking
+            #     auto_loss = automasking_loss(
+            #         train_cache.ssim, x, x[:, :, :, train_cache.target_id, :];
+            #         source_ids=train_cache.source_ids)
+            # end
 
             loss_cpu = 0.0
             disparity, warped, vis_loss = nothing, nothing, nothing
             do_visualization = i % log_iter == 0 || i == 1
 
             Flux.Optimise.update!(optimizer, θ, gradient(θ) do
-                loss, disparity, warped, vis_loss = train_loss(
-                    model, x, auto_loss, train_cache,
+                loss, disparity = train_loss(
+                    model, x, y, train_cache,
                     parameters, do_visualization)
                 loss_cpu = cpu(loss)
                 loss
@@ -176,11 +176,11 @@ function train()
                 # save(
                 #     joinpath(log_dir, "loss-$epoch-$i.png"),
                 #     permutedims(vis_loss[:, :, 1, 1], (2, 1)))
-                for sid in 1:length(warped)
-                    save_warped(
-                        warped[sid][:, :, :, 1],
-                        joinpath(log_dir, "warp-$epoch-$i-$sid.png"))
-                end
+                # for sid in 1:length(warped)
+                #     save_warped(
+                #         warped[sid][:, :, :, 1],
+                #         joinpath(log_dir, "warp-$epoch-$i-$sid.png"))
+                # end
             end
             if i % save_iter == 0
                 model_host = cpu(model)
