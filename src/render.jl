@@ -24,7 +24,7 @@ end
 
 function get_src_xyz_from_plane_disparity(meshgrid_src_homo, mpi_disparity_src, K_src_inv)
     N, B = size(mpi_disparity_src)
-
+    _, W, H = size(meshgrid_src_homo)
     mpi_depth_src = reshape(1 ./ mpi_disparity_src, (1, 1, 1, N, B))
     return reshape(K_src_inv * reshape(meshgrid_src_homo, 3, :), (3, W, H)) .* mpi_depth_src
 end
@@ -89,4 +89,22 @@ function sample(src, depth_src, pose, K, K_inv)
     return tgt, valid_mask
 end
 
+function render_tgt_rgb_depth(rgb, sigma, disparity_src, xyz_tgt, pose, K_inv, K)
+    # size(rgb) = (W, H, 3, N, B)
+    # size(sigma) = (W, H, 1, N, B)
+    # size(disparity_src) = (N, B)
+    # size(xyz_tgt) = (W, H, 3, N, B) ??
+    # size(K_inv) = (3, 3)
+    # size(K) = (3, 3)
 
+    W, H, _, N, B = size(rgb)
+
+    depth_src = 1 ./ disparity_src
+    xyz_src = cat(rgb, sigma, xyz_tgt, dims=3)
+
+    tgt, valid_mask = sample(reshape(xyz_src, (W, H, 7, N*B)), depth_src, pose, K, K_inv)
+
+    xyz = tgt[:, :, ]
+
+
+end

@@ -1,7 +1,8 @@
 using Monodepth: get_tgt_xyz_from_plane_disparity, so3_exp_map, Pose
 using PyCall, CUDA, Flux
 
-# push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+push!(pyimport("sys")."path", "/home/lab/Documents/vop_BC04/MINE")
 push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/code/VOP/MINE/MINE")
 
 
@@ -9,7 +10,7 @@ push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/co
 @pyimport torch as torch
 @pyimport numpy as np
 
-B, N, H, W = 4, 32, 100, 200
+B, N, H, W = 2, 32, 100, 200
 
 cuda0 = torch.device("cuda:0")
 

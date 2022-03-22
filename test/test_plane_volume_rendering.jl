@@ -1,5 +1,8 @@
 using Monodepth: plane_volume_rendering
 using PyCall, CUDA, Flux
+
+push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+push!(pyimport("sys")."path", "/home/lab/Documents/vop_BC04/MINE")
 push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/code/VOP/MINE/MINE")
 
 @pyimport operations.mpi_rendering as mpi_rendering

@@ -1,7 +1,8 @@
 using PyCall, CUDA, Flux
 using Monodepth: get_src_xyz_from_plane_disparity
 
-# push!(pyimport("sys")."path", "/home/lab/Documents/vop_BC04/MINE")
+push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+push!(pyimport("sys")."path", "/home/lab/Documents/vop_BC04/MINE")
 push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/code/VOP/MINE/MINE")
 
 @pyimport operations.mpi_rendering as mpi_rendering
@@ -9,7 +10,7 @@ push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/co
 @pyimport torch as torch
 @pyimport numpy as np
 
-B, S, H, W = 4, 32, 100, 200
+B, S, H, W = 2, 32, 100, 200
 
 cuda0 = torch.device("cuda:0")
 
@@ -19,9 +20,9 @@ cuda0 = torch.device("cuda:0")
 #     mpi_depth_src = reshape(1 ./ mpi_disparity_src, (1, 1, 1, N, B))
 #     return reshape(K_src_inv * reshape(meshgrid_src_homo, 3, :), (3, W, H)) .* mpi_depth_src
 # end
-meshgrid_src_homo_p =  rand(3,H,W)
+meshgrid_src_homo_p = rand(3,H,W)
 mpi_disparity_src_p = rand(B,S)
-K_src_inv_p = rand(B,3,3)
+K_src_inv_p = repeat(rand(1, 3, 3), B, 1, 1)
 
 meshgrid_src_homo_j =  permutedims(meshgrid_src_homo_p, (1,3,2))|>gpu
 mpi_disparity_src_j =  permutedims(mpi_disparity_src_p, (2,1))|>gpu
@@ -31,10 +32,11 @@ meshgrid_src_homo_p, mpi_disparity_src_p, K_src_inv_p = [torch.tensor(x, device=
 
 out_p = mpi_rendering.get_src_xyz_from_plane_disparity(meshgrid_src_homo_p, mpi_disparity_src_p, K_src_inv_p)
 out_j = get_src_xyz_from_plane_disparity(meshgrid_src_homo_j, mpi_disparity_src_j, K_src_inv_j[:, :, 1])
+size(out_j)
 
-out_p.shape
-isapprox(collect(permutedims(out_j, (5,4,3,2,1))), np.array(out_p.cpu()), rtol=1e-7)
+isapprox(collect(permutedims(out_j, (5,4,1,3,2))), np.array(out_p.cpu()), rtol=1e-7)
 
+collect(permutedims(out_j, (5,4,1,3,2))) .- np.array(out_p.cpu())
 
 
 #pyton line by line

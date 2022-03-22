@@ -1,5 +1,9 @@
 using Monodepth: sample, so3_exp_map, Pose
+using Monodepth
 using PyCall, CUDA, Flux
+
+push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+push!(pyimport("sys")."path", "/home/lab/Documents/vop_BC04/MINE")
 push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/code/VOP/MINE/MINE")
 
 @pyimport operations.homography_sampler as homography_sampler
@@ -49,7 +53,7 @@ end
 
 tgt_BCHW2, valid_mask2 = sample(gpu(src), gpu(depth_src), gpu(pose), gpu(K), gpu(K_inv))
 
-src_BCHW, d_src_B, G_tgt_src, K_src_inv, K_tgt = [torch.tensor(Float32.(x), device=cuda0) for x in (src_BCHW, d_src_B, G_tgt_src, K_src_inv, K_tgt)]
+# src_BCHW, d_src_B, G_tgt_src, K_src_inv, K_tgt = [torch.tensor(Float32.(x), device=cuda0) for x in (src_BCHW, d_src_B, G_tgt_src, K_src_inv, K_tgt)]
 tgt_BCHW, valid_mask = HS.sample(src_BCHW, d_src_B, G_tgt_src, K_src_inv, K_tgt)
 
 # gebruik functies `j` (julia) en `p` (python) om te vermijden dat tussenvariabelen in globale scope belanden,
@@ -147,7 +151,11 @@ p()
 
 permutedims(reshape(j(),(3, W, H, :)) , (4, 3, 2, 1))|>collect ≈ np.array(p().cpu())
 
-isapprox((permutedims(reshape(j()[1:2, :, :] ./ j()[3:3, :, :],(2, W, H, :)) , (4, 3, 2, 1))|>collect), np.array(py"$(p())[:, :, :, 0:2] / $(p())[:, :, :, 2:]".cpu()), rtol=1)
+isapprox((permutedims(reshape(j(),(3, W, H, :)) , (4, 3, 2, 1))|>collect), np.array(py"$(p())".cpu()), rtol=1e-4)
+(permutedims(reshape(j(),(3, W, H, :)) , (4, 3, 2, 1))|>collect) ./ np.array(py"$(p())".cpu())
+
+
+isapprox((permutedims(reshape(j()[1:2, :, :] ./ j()[3:3, :, :],(2, W, H, :)) , (4, 3, 2, 1))|>collect), np.array(py"$(p())[:, :, :, 0:2] / $(p())[:, :, :, 2:]".cpu()), rtol=1e-7)
 
 test = (permutedims(reshape(j()[1:2, :, :] ./ j()[3:3, :, :],(2, W, H, :)) , (4, 3, 2, 1))|>collect) .- np.array(py"$(p())[:, :, :, 0:2] / $(p())[:, :, :, 2:]".cpu())
 
@@ -156,3 +164,19 @@ test2 = abs.((permutedims(reshape(j(),(3, W, H, :)) , (4, 3, 2, 1))|>collect) .-
 
 maximum(abs.(test))
 np.array(p().cpu())[abs.(test2) .> 5]
+
+#test inversie:
+@pyimport utils as utils
+a = rand(10,10)
+a_p = torch.tensor(a, device=cuda0)
+a_j = CuArray(a)
+
+result_j = Monodepth.inv(a_j)
+result_p = utils.inverse(a_p)
+# result_p = torch.inverse(a_p)
+
+a_j * result_j
+
+torch.matmul(a_p, result_p)
+
+isapprox(collect(result_j), np.array(result_p.cpu()), rtol=1e-15)
