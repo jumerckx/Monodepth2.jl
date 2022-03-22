@@ -57,7 +57,7 @@ function get_tgt_xyz_from_plane_disparity(xyz_src, pose)
     _ , W, H, N, B = size(xyz_src)
     # R*[x y z]ᵀ + t:
     xyz_src = reshape(xyz_src, (3, :, B)) # 3×(W×H×N)×B
-    xyz_tgt = (R ⊠ xyz_src) .+ t
+    xyz_tgt = (R ⊠ xyz_src) .+ reshape(t, (3, 1, :))
     return  reshape(xyz_tgt, (3, W, H, N, B)) # 3×W×H×N×B
 end
 

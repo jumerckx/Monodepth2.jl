@@ -1,7 +1,9 @@
 using Monodepth: get_tgt_xyz_from_plane_disparity, so3_exp_map, Pose
 using PyCall, CUDA, Flux
 
-push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+# push!(pyimport("sys")."path", "D://Studie//Vop//MINE")
+push!(pyimport("sys")."path", "/mnt/c/Users/jules/OneDrive - UGent/Documenten/code/VOP/MINE/MINE")
+
 
 @pyimport operations.mpi_rendering as mpi_rendering
 @pyimport torch as torch
