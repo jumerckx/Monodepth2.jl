@@ -42,4 +42,4 @@ G_tgt_src = reshape(G_tgt_src, (B, 4, 4))
 G_tgt_src = torch.tensor(G_tgt_src)
 
 tgt_rgb_syn_p, tgt_depth_syn_p, tgt_mask_p = mpi_rendering.render_tgt_rgb_depth( ,mpi_rgb_src_p,mpi_sigma_src_p, mpi_disparity_src_p, xyz_tgt_BS3HW_p, G_tgt_src, K_src_inv_p, K_tgt_p )
-tgt_rgb_syn_j, tgt_depth_syn_j, tgt_mask_j = mpi_rendering.render_tgt_rgb_depth( ,mpi_rgb_src_j,mpi_sigma_src_j, mpi_disparity_src_j, xyz_tgt_BS3HW_j, pose,K_src_inv_j[:, :, 1], K_tgt_p )
+tgt_rgb_syn_j, tgt_depth_syn_j, tgt_mask_j = mpi_rendering.render_tgt_rgb_depth( ,mpi_rgb_src_j,mpi_sigma_src_j, mpi_disparity_src_j, xyz_tgt_BS3HW_j, pose,K_src_inv_j[:, :, 1], K_tgt_j )
