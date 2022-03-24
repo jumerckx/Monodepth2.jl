@@ -23,7 +23,7 @@ struct DepthDecoder{B, D}
     decoders::D
 end
 Flux.@functor DepthDecoder
-function DepthDecoder(;encoder_channels, scale_levels, embedding_levels)
+function DepthDecoder(;encoder_channels, scale_levels, embedding_levels=21)
     if length(scale_levels) > 5 || minimum(scale_levels) < 1 || maximum(scale_levels) > 5
         error("`scale_levels` should be at most of length 5 and have values in [1, 5] range.")
     end

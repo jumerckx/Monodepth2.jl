@@ -1,3 +1,5 @@
+# deze file is enkel nog ter referentie
+
 W, H = 416, 132
 N, B = 32, 4
 
@@ -69,7 +71,7 @@ xyz_src
 
 CUDA.@time get_tgt_xyz_from_plane_disparity(xyz_src, poses[1])
 
-function sample(src, depth_src, pose, K, K_inv)
+function sample(src, depth_src, pose, K, K_inv) # H en W moeten nog argumenten zijn
     R = so3_exp_map(pose.rvec)
     t = pose.tvec
     n = transfer([0 0 1])
@@ -96,9 +98,11 @@ function sample(src, depth_src, pose, K, K_inv)
     return tgt, valid_mask
 end
 
-# depth_src = 1 ./ mpi_disparity_src
+depth_src = 1 ./ mpi_disparity_src
 
-# pose = poses[1]
+pose = poses[1]
+
+nothing
 
 # K = train_cache.K
 # invK = train_cache.invK

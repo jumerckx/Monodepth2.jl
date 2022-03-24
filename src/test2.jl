@@ -1,3 +1,5 @@
+# deze file is enkel nog ter referentie
+
 using Flux: unsqueeze, grid_sample
 
 Flux.unsqueeze
@@ -24,11 +26,11 @@ K = [
 ]|>transfer
 K_inv = inv(K)
 
-reshape(depth_src, (1, 1, size(depth_src, 1), size(depth_src, 2)))
-reshape(t ⊠ n, (3, 3, 1, :))
-temp = reshape(unsqueeze(t ⊠ n, 3) ./ -reshape(depth_src, (1, 1, size(depth_src, 1), size(depth_src, 2))), (3, 3, :))
+t = Flux.unsqueeze(pose.tvec, 2)
+R = so3_exp_map(pose.rvec)
+temp = Flux.unsqueeze(t ⊠ n, 3) ./ -reshape(depth_src, (1, 1, size(depth_src, 1), size(depth_src, 2)))
+H_tgt_src = K ⊠ (reshape(Flux.unsqueeze(R, 3) .- temp, (3, 3, :))) ⊠ K_inv
 
-H_tgt_src = K ⊠ (R .- temp) ⊠ K_inv
 
 H_src_tgt = inv(H_tgt_src)
 
@@ -44,7 +46,7 @@ meshgrid_src[2, :, :] .= (meshgrid_src[2, :, :] .+ eltype(meshgrid_src)(0.5)) ./
 
 meshgrid_src = reshape(meshgrid_src, (2, W, H, :))
 
-src = CUDA.rand(W, H, 7, 32*1)
+src = CUDA.rand(W, H, 7, 32*2)
 
 grid_sample(src, meshgrid_src; padding_mode=:border)
 
