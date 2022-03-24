@@ -18,11 +18,12 @@ rgb_BS3HW, sigma_BS1HW, xyz_BS3HW = rand(B, N, 3, H, W), rand(B, N, 1, H, W), ra
 rgb = permutedims(rgb_BS3HW, (5, 4, 3, 2, 1))|>gpu
 sigma = permutedims(sigma_BS1HW, (5, 4, 3, 2, 1))|>gpu
 xyz = permutedims(xyz_BS3HW, (3, 5, 4, 2, 1))|>gpu
-
+size(xyz)
 rgb_BS3HW, sigma_BS1HW, xyz_BS3HW = [torch.tensor(x, device=cuda0) for x in (rgb_BS3HW, sigma_BS1HW, xyz_BS3HW)]
 
 rgb_out, depth_out, transparency_acc, weights = mpi_rendering.plane_volume_rendering(rgb_BS3HW, sigma_BS1HW, xyz_BS3HW, false)
 rgb_out2, transparency_acc2, weights2 = plane_volume_rendering(rgb, sigma, xyz)
+size(rgb_out2)
 
 isapprox(collect(permutedims(rgb_out2, (4, 3, 2, 1))), np.array(rgb_out.cpu()), rtol=1e-7)
 

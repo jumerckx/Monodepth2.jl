@@ -32,8 +32,8 @@ end
 function plane_volume_rendering(rgb, sigma, xyz)
     W, H, _, N, B = size(rgb)
     diff = permutedims(xyz[:, :, :, 2:end,:] .- xyz[:, :, :, 1:end-1, :], (2, 3, 1, 4, 5))
+    @show size(diff)
     dist = cat(norm(diff, dims=3), CUDA.fill(1f3, W, H, 1, 1, B), dims=4) # TODO: TinyNERF gebruikt fill met 1e10
-
     transparency = exp.(-dist .* sigma)
     alpha = 1 .- transparency
 
@@ -82,7 +82,7 @@ function sample(src, depth_src, pose, K, K_inv)
     
     meshgrid_src[1, :, :] .= (meshgrid_src[1, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (W/2)
     meshgrid_src[2, :, :] .= (meshgrid_src[2, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (H/2)
-    
+
     meshgrid_src = reshape(meshgrid_src, (2, W, H, :))
         
     tgt = grid_sample(src, meshgrid_src; padding_mode=:border)
@@ -93,18 +93,22 @@ function render_tgt_rgb_depth(rgb, sigma, disparity_src, xyz_tgt, pose, K_inv, K
     # size(rgb) = (W, H, 3, N, B)
     # size(sigma) = (W, H, 1, N, B)
     # size(disparity_src) = (N, B)
-    # size(xyz_tgt) = (W, H, 3, N, B) ??
+    # size(xyz_tgt) = (3, W, H, N, B) ??
     # size(K_inv) = (3, 3)
     # size(K) = (3, 3)
-
     W, H, _, N, B = size(rgb)
 
     depth_src = 1 ./ disparity_src
-    xyz_src = cat(rgb, sigma, xyz_tgt, dims=3)
-
+    xyz_src = cat(rgb, sigma, permutedims(xyz_tgt, (2, 3, 1, 4, 5)), dims=3)
     tgt, valid_mask = sample(reshape(xyz_src, (W, H, 7, N*B)), depth_src, pose, K, K_inv)
+    tgt = reshape(tgt, (W, H, :, N, B))
+    valid_mask = reshape(valid_mask, (W, H, :, N, B))
+    rgb = tgt[:, :, 1:3, :, :]
+    sigma = tgt[:, :, 4:4, :, :]
+    xyz = tgt[:, :, 5:end, :, :]
+    sigma = sigma .* (sigma .>= 0)
+    rgb, depth, _ = plane_volume_rendering(rgb, sigma, permutedims(xyz, (3, 1, 2, 4, 5)))
+    mask = sum(valid_mask, dims=4)
 
-    xyz = tgt[:, :, ]
-
-
+    return rgb, depth, mask
 end
