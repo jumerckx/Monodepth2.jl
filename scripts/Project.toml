@@ -1,0 +1,9 @@
+[deps]
+Augmentations = "201790e9-3802-4bf2-a4d2-ca8acc212efd"
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+DataLoaders = "2e981812-ef13-4a9c-bfa0-ab13047b12a9"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+Monodepth = "8d052aca-3f98-487e-b8d5-a4bb50bcc69c"
+ResNet = "58a9d5b1-5aa3-499c-8f61-cc8cc0c973ca"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
