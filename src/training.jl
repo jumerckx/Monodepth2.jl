@@ -60,13 +60,14 @@ function train_loss(
         #     warp_loss = _apply_mask(auto_loss, warp_loss)
         # end
 
-        # normalized_disparity = (
-        #     disparity ./ (mean(disparity; dims=(1, 2)) .+ T(1e-7)))[:, :, 1, :]
-        # disparity_loss = smooth_loss(normalized_disparity, rgb) .*
-        #     T(parameters.disparity_smoothness) .* T(scale)
+        normalized_disparity = (
+            disparity ./ (mean(disparity; dims=(1, 2)) .+ T(1e-7)))[:, :, 1, :]
+        disparity_loss = smooth_loss(normalized_disparity, rgb) .*
+            T(parameters.disparity_smoothness) .* T(scale)
 
         # loss += mean(warp_loss) + disparity_loss
-        loss += D(depth, y)
+        mask = (y .!= 0)
+        loss += D(depth[mask], y[mask]) + disparity_loss
 
         # if do_visualization && i == length(cache.scales)
         #     vis_warped = cpu.(warped_images)
@@ -77,6 +78,13 @@ function train_loss(
     loss / T(length(cache.scales)), vis_disparity
 end
 
-D(ŷ, y) = mean((log.(ŷ) .- log.(y) .+ α(ŷ, y)).^2)
+d(ŷ, y) = log(ŷ) - log(y)
 
-@inline α(ŷ, y) = mean(log.(y) .- log.(ŷ))
+function D(ŷ, y)
+    ds = d.(ŷ, y)
+    mean(ds .^ 2) - mean(ds)^2
+end
+
+# D(ŷ, y) = mean((log.(ŷ) .- log.(y) .+ α(ŷ, y)).^2)
+
+# @inline α(ŷ, y) = mean(log.(y) .- log.(ŷ))

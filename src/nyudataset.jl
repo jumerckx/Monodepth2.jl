@@ -28,10 +28,6 @@ function Base.getindex(d::NYUDataset, i)
     width, height = d.resolution
     rgb, depth = imresize(load(rgb_fname), (height, width)), imresize(load(depth_fname), (height, width))
     if d.augmentations ≢ nothing
-        (rgb, depth) = d.augmentations((rgb, depth))
-    end
-
-    if d.augmentations ≢ nothing
         rgb, depth = d.augmentations((rgb, depth))
     end
     rgb, depth = channelview.((rgb, depth))

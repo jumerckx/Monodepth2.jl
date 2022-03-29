@@ -1,6 +1,6 @@
 module Monodepth
 
-export Depth10k, KittyDataset, DChain, DataLoaders # dataloading
+export Depth10k, KittyDataset, SupervisedKITTI, NYUDataset, DChain, DataLoaders # dataloading
 export Params, TrainCache
 export save_disparity # io_utils.jl
 export SSIM # utils.jl
@@ -54,6 +54,7 @@ end
 include("dtk.jl")
 include("kitty.jl")
 include("nyudataset.jl")
+include("supervisedKITTI.jl")
 include("dchain.jl")
 
 include("io_utils.jl")

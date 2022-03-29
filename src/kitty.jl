@@ -21,7 +21,7 @@ function KittyDataset(image_dir, sequence; target_size, augmentations = nothing)
     Ks = readlines(joinpath(frames_dir, "calib.txt"))
     K = parse_matrix(Ks[1][5:end])
 
-    frames_dir = joinpath(frames_dir, "image_0")
+    frames_dir = joinpath(frames_dir, "image_2")
     n_frames, original_size = _get_seq_info(frames_dir)
 
     fx = mean(target_size ./ original_size) * K[1, 1]
