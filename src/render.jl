@@ -121,3 +121,15 @@ function render_tgt_rgb_depth(rgb, sigma, disparity_src, xyz_tgt, pose, K_inv, K
 
     return rgb, depth, mask
 end
+
+function render_novel_view(mpi_rgb, mpi_sigma, disparity_src, pose, K_inv, K; scale=0)
+    W, H, _, N, B = size(mpi_rgb)
+    meshgrid = create_meshgrid(H, W)
+
+    xyz_src = get_src_xyz_from_plane_disparity(meshgrid, disparity_src, K_inv)
+    xyz_tgt = get_tgt_xyz_from_plane_disparity(xyz_src, pose)
+
+    tgt_imgs_syn, tgt_depth_syn, tgt_mask_syn = render_tgt_rgb_depth(mpi_rgb, mpi_sigma, disparity_src, xyz_tgt, pose, K_inv, K)
+
+    tgt_disparity_syn = 1 ./ tht_depth_syn
+

@@ -92,9 +92,30 @@ function network_forward(model, rgb; N=32, K_inv)
 
     #disparities, poses = model(rgb, disparity_src, nothing, nothing)
     disparities = model(rgb, disparity_src, nothing, nothing)
-    return model(rgb, disparity_src, nothing, nothing)
+    return disparities
 end
 
-function loss_per_scale(tgt)
+function loss_per_scale(scale, K, mpi_rgb, mpi_sigma, disparity)
+    K = K ./ 2^scale
+    K[3, 3] = 0
+    # K_inv...
+
+    xyz_src = get_src_xyz_from_plane_disparity(meshgrid, disparity, K_inv)
+
+    rgb_out, transparency_acc, weights = plane_volume_rendering(mpi_rgb, mpi_sigma, xyz_src)
+
+    # mpi_rgb = blend_weights .* ...
+    # src_img_syn, src_depth_syn = weighted_sum(mpi_rgb, xyz_src, weights)
+
+    src_disparity_syn = 1 ./ src_depth_syn
+
+    # scale_factor?
+
+    get_src_xyz_from_plane_disparity(
+        meshgrid, # ?
+        src_disparity_syn,
+        K_inv
+    )
+
 
 end
