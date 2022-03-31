@@ -76,3 +76,25 @@ function train_loss(
 
     loss / T(length(cache.scales)), vis_disparity, vis_warped, vis_loss
 end
+
+function network_forward(model, rgb; N=32, K_inv)
+    W, H, B = size(rgb)
+
+    meshgrid_src = gpu(create_meshgrid(H, W))
+    disparity_src = uniformly_sample_disparity_from_linspace_bins(N, B; near=1f0, far=0.001f0)
+
+    # _get_disparity_list
+    xyz_src = get_src_xyz_from_plane_disparity(
+        meshgrid_src,
+        disparity_src,
+        K_inv
+    )
+
+    #disparities, poses = model(rgb, disparity_src, nothing, nothing)
+    disparities = model(rgb, disparity_src, nothing, nothing)
+    return model(rgb, disparity_src, nothing, nothing)
+end
+
+function loss_per_scale(tgt)
+
+end

@@ -16,6 +16,14 @@ function inv(x::CuArray{T, N}) where {T, N}
     return inv!(x)
 end
 
+function uniformly_sample_disparity_from_linspace_bins(num_bins, batch_size; near=1f0, far=0.001f0)
+    bin_edges_start = range(near, far, num_bins+1)[1:end-1]
+    interval = bin_edges_start[2]-bin_edges_start[1]
+    return bin_edges_start .+ (CUDA.rand(num_bins, batch_size)*interval)
+end
+@non_differentiable uniformly_sample_disparity_from_linspace_bins(::Any...)
+
+
 norm(x; dims) = sqrt.(sum(abs2.(x), dims=dims))
 
 function create_meshgrid(H, W)
@@ -26,7 +34,8 @@ function get_src_xyz_from_plane_disparity(meshgrid_src_homo, mpi_disparity_src, 
     N, B = size(mpi_disparity_src)
     _, W, H = size(meshgrid_src_homo)
     mpi_depth_src = reshape(1 ./ mpi_disparity_src, (1, 1, 1, N, B))
-    return reshape(K_src_inv * reshape(meshgrid_src_homo, 3, :), (3, W, H)) .* mpi_depth_src
+    xyz_src = reshape(K_src_inv * reshape(meshgrid_src_homo, 3, :), (3, W, H)) .* mpi_depth_src
+    return xyz_src
 end
 
 function plane_volume_rendering(rgb, sigma, xyz)

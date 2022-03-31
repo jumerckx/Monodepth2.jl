@@ -33,7 +33,7 @@ save_dir = "./out/models"
 isdir(log_dir) || mkpath(log_dir)
 isdir(save_dir) || mkpath(save_dir)
 
-grayscale = true
+grayscale = false
 in_channels = grayscale ? 1 : 3
 augmentations = FlipX(0.5)
 target_size=(128, 416)
@@ -87,20 +87,20 @@ trainmode!(model)
 
 # Test:
 
-x = transfer(first(DataLoader(dchain, 4)))
+# x = transfer(first(DataLoader(dchain, 3)))
+
+x = CUDA.rand(416, 128, 3, 3)
 
 CUDA.allowscalar(false)
-disparities, poses = CUDA.@time model(x, train_cache.source_ids, train_cache.target_id)
+disparities, poses = CUDA.@time model(
+    x,
+    Monodepth.uniformly_sample_disparity_from_linspace_bins(32, 3; near=1f0, far=0.001f0),
+    train_cache.source_ids,
+    train_cache.target_id)
 
-Monodepth.f(10)
 
-disparities
 
-disparities = map(disparities) do d
-    W, H, C, _ = size(d)
-    reshape(d, (W, H, C, 32, :))
-end
-
-Monodepth.
-
-Monodepth.get_src_xyz_from_plane_disparity
+disparities_nf = Monodepth.network_forward(
+    model,
+    x,
+    K_inv=CUDA.rand(3, 3))

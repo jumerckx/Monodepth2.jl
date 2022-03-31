@@ -43,7 +43,7 @@ function DepthDecoder(;encoder_channels, scale_levels, embedding_levels=21)
         # TODO: set correct number of output channels (color+density) 
         # TODO: sigmoid activation for output?
 
-        push!(decoders, DecoderBlock(Conv((3, 3), decoder_channels[slevel]=>1, σ)))
+        push!(decoders, DecoderBlock(Conv((3, 3), decoder_channels[slevel]=>4, σ)))
         bstart = slevel + 1
     end
     DepthDecoder(branches, decoders)
@@ -51,7 +51,7 @@ end
 
 function (d::DepthDecoder)(features::NTuple{N, T})::Vector{T} where {T, N}
     x, skips = features[end], features[(end - 1):-1:1]
-    n_skips = length(skips)
+        n_skips = length(skips)
     bstart = 1
 
     function _runner(branch, decoder)
