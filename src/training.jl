@@ -38,6 +38,8 @@ function train_loss(
     loss = zero(T)
     width, height = parameters.target_size
 
+    mask = (y .!= 0)
+
     for (i, (disparity, scale)) in enumerate(zip(disparities, cache.scales))
         dw, dh, _, dn = size(disparity)
         if dw != width || dh != height
@@ -66,7 +68,7 @@ function train_loss(
             T(parameters.disparity_smoothness) .* T(scale)
 
         # loss += mean(warp_loss) + disparity_loss
-        mask = (y .!= 0)
+        
         loss += D(depth[mask], y[mask]) + disparity_loss
 
         # if do_visualization && i == length(cache.scales)

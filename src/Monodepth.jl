@@ -51,10 +51,11 @@ struct TrainCache{S}
     scales::Vector{Float64}
 end
 
-include("dtk.jl")
-include("kitty.jl")
-include("nyudataset.jl")
-include("supervisedKITTI.jl")
+include("datasets/dtk.jl")
+include("datasets/kitty.jl")
+include("datasets/nyudataset.jl")
+include("datasets/supervisedKITTI.jl")
+include("datasets/supervised_dense_KITTI.jl")
 include("dchain.jl")
 
 include("io_utils.jl")

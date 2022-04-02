@@ -40,39 +40,51 @@ transfer = device ∘ precision
 
 
 
-img_dir = "/scratch/vop_BC04/KITTI/2011_09_26"
-depth_dir = "../untitled folder 2/train/"
+# img_dir = "/scratch/vop_BC04/KITTI/2011_09_26"
+# depth_dir = "../untitled folder 2/train/"
 
-dataset = [
-    SupervisedKITTI(
-        joinpath(img_dir, dir),
-        joinpath(depth_dir, dir);
+# dataset = [
+#     SupervisedKITTI(
+#         joinpath(img_dir, dir),
+#         joinpath(depth_dir, dir);
+#         target_size=(128,416),
+#         augmentations=nothing)
+#     for dir in Set(readdir(img_dir)) ∩ Set(readdir(depth_dir))
+#     ][2]
+
+
+
+# using Images
+# rgb = permutedims(dataset[3][1], (3, 2, 1))
+# gray = permutedims(dataset[3][2][:, :, 1], (2, 1))
+# colorview(Gray, gray ./ maximum(gray))
+# colorview(RGB, rgb,)
+
+# count(gray .!= 0)/length(gray)
+
+# gray[gray .!= 0]
+
+# maximum(permutedims(first(datasets)[1][2][:, :, 1], (2, 1)))
+
+# readdir(img_dir)
+
+# disparities = model(gpu(dataset[3][1][:, :, :, 1:1]))
+
+
+# Gray.(collect(disparities[4][:, :, 1, 1])')
+
+img_dir = "/scratch/depth_completion/depth_selection/test_depth_completion_anonymous/image/"
+depth_dir = "/scratch/depth_completion/depth_selection/test_depth_completion_anonymous/output_png/"
+
+dataset = SupervisedDenseKITTI(
+        img_dir,
+        depth_dir;
         target_size=(128,416),
         augmentations=nothing)
-    for dir in Set(readdir(img_dir)) ∩ Set(readdir(depth_dir))
-    ][2]
 
+dataset.ids
 
-
-using Images
-rgb = permutedims(dataset[3][1], (3, 2, 1))
-gray = permutedims(dataset[3][2][:, :, 1], (2, 1))
-colorview(Gray, gray ./ maximum(gray))
-colorview(RGB, rgb,)
-
-count(gray .!= 0)/length(gray)
-
-gray[gray .!= 0]
-
-maximum(permutedims(first(datasets)[1][2][:, :, 1], (2, 1)))
-
-readdir(img_dir)
-
-disparities = model(gpu(dataset[3][1][:, :, :, 1:1]))
-
-
-Gray.(collect(disparities[4][:, :, 1, 1])')
-
+permutedims(dataset[4][2][:, :, 1], (2, 1))
 
 function train(;η=1e-4, model=nothing, θ=nothing)
     device = gpu
@@ -98,18 +110,27 @@ function train(;η=1e-4, model=nothing, θ=nothing)
     # ]
     
     target_size= (128,416)
-    img_dir = "/scratch/vop_BC04/KITTI/2011_09_26"
-    depth_dir = "../untitled folder 2/train/"
+    # img_dir = "/scratch/vop_BC04/KITTI/2011_09_26"
+    # depth_dir = "../untitled folder 2/train/"
 
-    datasets = [
-        SupervisedKITTI(
-            joinpath(img_dir, dir),
-            joinpath(depth_dir, dir);
+    # datasets = [
+    #     SupervisedKITTI(
+    #         joinpath(img_dir, dir),
+    #         joinpath(depth_dir, dir);
+    #         target_size,
+    #         augmentations)
+
+    #     for dir in Set(readdir(img_dir)) ∩ Set(readdir(depth_dir))
+    # ]
+
+    img_dir = "/scratch/depth_completion/depth_selection/test_depth_completion_anonymous/image/"
+    depth_dir = "/scratch/depth_completion/depth_selection/test_depth_completion_anonymous/output_png/"
+
+    datasets = [SupervisedDenseKITTI(
+            img_dir,
+            depth_dir;
             target_size,
-            augmentations)
-
-        for dir in Set(readdir(img_dir)) ∩ Set(readdir(depth_dir))
-    ]
+            augmentations)]
 
     dchain = DChain(datasets)
     dataset = datasets[begin]
@@ -190,17 +211,12 @@ function train(;η=1e-4, model=nothing, θ=nothing)
             end)
 
             if do_visualization
-                save_disparity(
-                    disparity[:, :, 1, 1],
-                    joinpath(log_dir, "loss-$epoch-$i.png"))
-                # save(
-                #     joinpath(log_dir, "loss-$epoch-$i.png"),
-                #     permutedims(vis_loss[:, :, 1, 1], (2, 1)))
-                # for sid in 1:length(warped)
-                #     save_warped(
-                #         warped[sid][:, :, :, 1],
-                #         joinpath(log_dir, "warp-$epoch-$i-$sid.png"))
-                # end
+                save_disparity(disparity[:, :, 1, 1])
+                colorview(RGB, permutedims(collect(x[:, :, :, 1]), (3, 2, 1)))|>display
+
+                # save_disparity(
+                #     disparity[:, :, 1, 1],
+                #     joinpath(log_dir, "loss-$epoch-$i.png"))
             end
             if i % save_iter == 0
                 model_host = cpu(model)
@@ -212,8 +228,6 @@ function train(;η=1e-4, model=nothing, θ=nothing)
     end
 end
 
-model = gpu(f32(load("/scratch/vop_BC04/out/models/4-500-1.3209074.bson")[:model_host]))
-
-model = nothing
+# model = gpu(f32(load("/scratch/vop_BC04/out/models/4-500-1.3209074.bson")[:model_host]))
 
 train()
