@@ -21,7 +21,7 @@ struct Model{E, D, P}
 end
 Flux.@functor Model
 
-function (m::Model)(x, disparity, source_ids, target_id; num_bins=32)
+function (m::Model)(x, disparity; num_bins=32)
     W, H, C, B = size(x)
     # x_flattened = reshape(x, (W, H, C, B))
 
@@ -35,8 +35,9 @@ function (m::Model)(x, disparity, source_ids, target_id; num_bins=32)
 
 
     embedded_disparity = embed(disparity)
-    # @show size(features[1])
-
+    @show size.(features)
+    @show size(embedded_disparity)
+    @show size(disparity)
     depth_decoder_x = map(features) do f
         f = cat(
             repeat(Flux.unsqueeze(f, 4), 1, 1, 1, num_bins, 1),

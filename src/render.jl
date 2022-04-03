@@ -41,7 +41,6 @@ end
 function plane_volume_rendering(rgb, sigma, xyz)
     W, H, _, N, B = size(rgb)
     diff = permutedims(xyz[:, :, :, 2:end,:] .- xyz[:, :, :, 1:end-1, :], (2, 3, 1, 4, 5))
-    @show size(diff)
     dist = cat(norm(diff, dims=3), CUDA.fill(1f3, W, H, 1, 1, B), dims=4) # TODO: TinyNERF gebruikt fill met 1e10
     transparency = exp.(-dist .* sigma)
     alpha = 1 .- transparency
@@ -49,12 +48,21 @@ function plane_volume_rendering(rgb, sigma, xyz)
     transparency_acc = cumprod(transparency .+ 1e-6, dims=4) # TODO: is ".+ 1e-6 " nodig?
     transparency_acc = cat(CUDA.ones(W, H, 1, 1, B), transparency_acc[:, :, :, 1:end-1, :], dims=4)
 
-    weights = transparency_acc .* alpha  # BxSx1xHxW
+    weights = transparency_acc .* alpha
+    
+    rgb_out, depth_out = weighted_sum_mpi(rgb, xyz, weights)
 
+    return rgb_out, depth_out, transparency_acc, weights
+end
+
+function weighted_sum_mpi(rgb, xyz, weights)
     rgb_out = dropdims(sum(weights .* rgb, dims=4), dims=4)
+    
+    # assume is_bg_depth_inf == false:
+    weights_sum = dropdims(sum(weights, dims=4), dims=4) # sum over planes
+    depth_out = dropdims(sum(weights .* permutedims(xyz[3:3, :, :, :, :], (2, 3, 1, 4, 5)), dims=4), dims=4) ./ (weights_sum .+ 1e-5)
 
-    # TODO: return depth?
-    return rgb_out, transparency_acc, weights
+    return rgb_out, depth_out
 end
 
 function get_tgt_xyz_from_plane_disparity(xyz_src, pose)
@@ -124,12 +132,14 @@ end
 
 function render_novel_view(mpi_rgb, mpi_sigma, disparity_src, pose, K_inv, K; scale=0)
     W, H, _, N, B = size(mpi_rgb)
-    meshgrid = create_meshgrid(H, W)
+    meshgrid = create_meshgrid(H, W)|>transfer # TODO: misschien beter als argument?
 
     xyz_src = get_src_xyz_from_plane_disparity(meshgrid, disparity_src, K_inv)
     xyz_tgt = get_tgt_xyz_from_plane_disparity(xyz_src, pose)
 
     tgt_imgs_syn, tgt_depth_syn, tgt_mask_syn = render_tgt_rgb_depth(mpi_rgb, mpi_sigma, disparity_src, xyz_tgt, pose, K_inv, K)
 
-    tgt_disparity_syn = 1 ./ tht_depth_syn
+    tgt_disparity_syn = 1 ./ tgt_depth_syn
 
+    return tgt_imgs_syn, tgt_disparity_syn, tgt_mask_syn
+end

@@ -89,18 +89,32 @@ trainmode!(model)
 
 # x = transfer(first(DataLoader(dchain, 3)))
 
-x = CUDA.rand(416, 128, 3, 3)
+x = CUDA.rand(416, 128, 3, 2)
 
 CUDA.allowscalar(false)
-disparities, poses = CUDA.@time model(
+disparities = CUDA.@time model(
     x,
-    Monodepth.uniformly_sample_disparity_from_linspace_bins(32, 3; near=1f0, far=0.001f0),
+    Monodepth.uniformly_sample_disparity_from_linspace_bins(32, 2; near=1f0, far=0.001f0),
     train_cache.source_ids,
     train_cache.target_id)
 
 
 
-disparities_nf = Monodepth.network_forward(
+mpi = Monodepth.network_forward(
     model,
     x,
     K_inv=CUDA.rand(3, 3))
+
+src_img = x
+tgt_img = CUDA.rand(size(src_img)...)
+pose = Monodepth.Pose(CUDA.rand(3, 2), CUDA.rand(3, 2))
+K = CUDA.rand(3, 3)
+invK = Monodepth.inv(K)
+@profview CUDA.@sync Monodepth.train_loss(
+    model,
+    x,
+    tgt_img,
+    pose,
+    K,
+    invK,
+    scales)

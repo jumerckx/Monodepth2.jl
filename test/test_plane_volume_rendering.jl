@@ -22,10 +22,20 @@ size(xyz)
 rgb_BS3HW, sigma_BS1HW, xyz_BS3HW = [torch.tensor(x, device=cuda0) for x in (rgb_BS3HW, sigma_BS1HW, xyz_BS3HW)]
 
 rgb_out, depth_out, transparency_acc, weights = mpi_rendering.plane_volume_rendering(rgb_BS3HW, sigma_BS1HW, xyz_BS3HW, false)
-rgb_out2, transparency_acc2, weights2 = plane_volume_rendering(rgb, sigma, xyz)
+rgb_out2, depth_out2, transparency_acc2, weights2 = plane_volume_rendering(rgb, sigma, xyz)
 size(rgb_out2)
 
 isapprox(collect(permutedims(rgb_out2, (4, 3, 2, 1))), np.array(rgb_out.cpu()), rtol=1e-7)
+isapprox(collect(permutedims(depth_out2, (4, 3, 2, 1))), np.array(depth_out.cpu()), rtol=1e-7)
+isapprox(collect(permutedims(transparency_acc2, (5, 4, 3, 2, 1))), np.array(transparency_acc.cpu()), rtol=1e-7)
+isapprox(collect(permutedims(weights2, (5, 4, 3, 2, 1))), np.array(weights.cpu()), rtol=1e-6) # rtol = 1e-7 geeft false
+
+size(rgb_out2) # (W, H, 3, B)
+size(depth_out2) # (W, H, 1, B)
+size(transparency_acc2) # (W, H, 1, N, B)
+size(weights2) # (W, H, 1, N, B)
+
+nothing
 
 # # Python line by line:
 # py"""
