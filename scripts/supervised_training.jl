@@ -8,6 +8,7 @@ using DataLoaders
 # using FileIO
 # using ImageCore
 # using ImageTransformations
+using Images
 using Monodepth: shuffleobs, get_pb, next!
 # using VideoIO
 # using ProgressMeter
@@ -76,7 +77,7 @@ transfer = device ∘ precision
 img_dir = "/scratch/depth_completion/depth_selection/test_depth_completion_anonymous/image/"
 depth_dir = "/scratch/depth_completion/depth_selection/test_depth_completion_anonymous/output_png/"
 
-dataset = SupervisedDenseKITTI(
+dataset = Monodepth.SupervisedDenseKITTI(
         img_dir,
         depth_dir;
         target_size=(128,416),
@@ -214,9 +215,9 @@ function train(;η=1e-4, model=nothing, θ=nothing)
                 save_disparity(disparity[:, :, 1, 1])
                 colorview(RGB, permutedims(collect(x[:, :, :, 1]), (3, 2, 1)))|>display
 
-                # save_disparity(
-                #     disparity[:, :, 1, 1],
-                #     joinpath(log_dir, "loss-$epoch-$i.png"))
+                save_disparity(
+                    disparity[:, :, 1, 1],
+                    joinpath(log_dir, "loss-$epoch-$i.png"))
             end
             if i % save_iter == 0
                 model_host = cpu(model)
