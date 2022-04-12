@@ -39,6 +39,7 @@ augmentations = FlipX(0.5)
 target_size=(128, 416)
 
 kitty_dir = "/scratch/vop_BC04/KITTI/"
+depth_dir = "/scratch/vop_BC04/depth_maps/"
 # datasets = [
     
 #     KittyDataset(kitty_dir, s; target_size, augmentations)
@@ -47,11 +48,24 @@ datasets = []
 for datum in filter(isdir, joinpath.(kitty_dir,  readdir(kitty_dir)))
     datum_path = joinpath(kitty_dir, datum)
     calib_path = joinpath(datum_path, "calib_cam_to_cam.txt")
-    for drive in filter(isdir, joinpath.(datum_path,  readdir(datum_path)))
-        poses_path = joinpath(drive, "poses.txt")
-        push!(datasets, KittyDataset(drive, calib_path, poses_path; target_size, augmentations)) 
+    for drive in readdir(datum_path)[isdir.(joinpath.(datum_path,  readdir(datum_path)))] # filter(isdir, joinpath.(datum_path,  readdir(datum_path)))
+        # println(datum_path)
+        # println(drive)
+        drive_depth_path = joinpath(depth_dir, drive, "proj_depth", "groundtruth")
+        if (isdir(drive_depth_path))
+            # println(drive_depth_path)
+            drive = joinpath(datum_path, drive)
+            poses_path = joinpath(drive, "poses.txt")
+            push!(datasets, KittyDataset(drive, drive_depth_path, calib_path, poses_path; target_size, augmentations)) 
+        end
     end
 end
+
+[println(d.depth_dir) for d in datasets]
+
+KittyDataset(joinpath(kitty_dir, "2011_09_26/2011_09_26_drive_0001_sync"), joinpath(depth_dir, "2011_09_26_drive_0001_sync/proj_depth/groundtruth"),
+    joinpath(kitty_dir, "2011_09_26", "calib_cam_to_cam.txt"),
+    joinpath(kitty_dir, "2011_09_26/2011_09_26_drive_0001_sync/poses.txt" ); target_size, augmentations)
 
 datasets[1][1]
 

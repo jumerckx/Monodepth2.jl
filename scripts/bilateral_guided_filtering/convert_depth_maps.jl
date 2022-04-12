@@ -14,13 +14,13 @@ function bilateral_guided_depth_completion(depth_path, img_path)
 end
 
 function convert(target_depth_root, src_depth_root, img_root)
-    i = 0
     for (root, dirs, files) in walkdir(img_root)
+        if length(files) != 0
+            println(root)
+        else
+            GC.gc()
+        end
         for file in files
-            if i > 50
-                println("einde")
-                return
-            end
             extension = splitext(file)[2]
             if extension == ".png"
                 # println(root)
@@ -30,9 +30,9 @@ function convert(target_depth_root, src_depth_root, img_root)
                 src_depth = joinpath(src_depth_root, sp[6], "proj_depth", "groundtruth", sp[7:end-1]..., file)
                 # @show src_depth
                 if isfile(src_depth)
-                    println("test")
-                    Gray.(collect(bilateral_guided_depth_completion(src_depth, joinpath(root, file))))|>display
-                    i += 1
+                    # Gray.(collect(bilateral_guided_depth_completion(src_depth, joinpath(root, file))))|>display
+                    target_path = joinpath(target_depth_root, sp[6], "proj_depth", "groundtruth", sp[7:end-1]..., file)
+                    save(target_path, Gray.(collect(bilateral_guided_depth_completion(src_depth, joinpath(root, file)))))
                 end
             end
         end

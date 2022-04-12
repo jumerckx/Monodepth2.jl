@@ -109,13 +109,13 @@ function bilateral_guided_depth_completion(depth, img; iters=1, device=CPU, S=(3
 	return depth_out.parent[(1:H) .+ S[1], (1:W) .+ S[2]]
 end
 
-begin # testafbeeldingen inladen.
-	img = Float64.(channelview(load("./scripts/bilateral_guided_filtering/img.png")))
-	# Gray.(img)|>display
-	sparse_depth = Float64.(channelview(load("./scripts/bilateral_guided_filtering/depth.png")))
-	# Gray.(sparse_depth)|>display
-	H, W = size(img)
-end
+# begin # testafbeeldingen inladen.
+# 	img = Float64.(channelview(load("./scripts/bilateral_guided_filtering/img.png")))
+# 	# Gray.(img)|>display
+# 	sparse_depth = Float64.(channelview(load("./scripts/bilateral_guided_filtering/depth.png")))
+# 	# Gray.(sparse_depth)|>display
+# 	H, W = size(img)
+# end
 
 # # test op gpu (CUDADevice):
 # CUDA.@time begin
