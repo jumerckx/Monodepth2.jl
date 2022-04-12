@@ -35,9 +35,9 @@ function (m::Model)(x, disparity; num_bins=32)
 
 
     embedded_disparity = embed(disparity)
-    @show size.(features)
-    @show size(embedded_disparity)
-    @show size(disparity)
+    # @show size.(features)
+    # @show size(embedded_disparity)
+    # @show size(disparity)
     depth_decoder_x = map(features) do f
         f = cat(
             repeat(Flux.unsqueeze(f, 4), 1, 1, 1, num_bins, 1),

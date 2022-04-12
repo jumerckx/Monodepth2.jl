@@ -45,7 +45,7 @@ function plane_volume_rendering(rgb, sigma, xyz)
     transparency = exp.(-dist .* sigma)
     alpha = 1 .- transparency
 
-    transparency_acc = cumprod(transparency .+ 1e-6, dims=4) # TODO: is ".+ 1e-6 " nodig?
+    transparency_acc = cumprod(transparency .+ eltype(transparency)(1e-6), dims=4) # TODO: is ".+ 1e-6 " nodig?
     transparency_acc = cat(CUDA.ones(W, H, 1, 1, B), transparency_acc[:, :, :, 1:end-1, :], dims=4)
 
     weights = transparency_acc .* alpha
@@ -133,12 +133,9 @@ end
 function render_novel_view(mpi_rgb, mpi_sigma, disparity_src, pose, K_inv, K; scale=0)
     W, H, _, N, B = size(mpi_rgb)
     meshgrid = create_meshgrid(H, W)|>transfer # TODO: misschien beter als argument?
-
     xyz_src = get_src_xyz_from_plane_disparity(meshgrid, disparity_src, K_inv)
     xyz_tgt = get_tgt_xyz_from_plane_disparity(xyz_src, pose)
-
     tgt_imgs_syn, tgt_depth_syn, tgt_mask_syn = render_tgt_rgb_depth(mpi_rgb, mpi_sigma, disparity_src, xyz_tgt, pose, K_inv, K)
-
     tgt_disparity_syn = 1 ./ tgt_depth_syn
 
     return tgt_imgs_syn, tgt_disparity_syn, tgt_mask_syn

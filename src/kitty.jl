@@ -1,13 +1,11 @@
 struct KittyDataset{A}
     frames_dir::String
-
     K::SMatrix{3, 3, Float64, 9}
     invK::SMatrix{3, 3, Float64, 9}
     resolution::Tuple{Int64, Int64}
 
-    source_ids::Vector{Int64}
-    target_id::Int64
-    frame_ids::Vector{Int64}
+    pose
+    
     total_length::Int64
 
     augmentations::A
@@ -16,48 +14,68 @@ end
 """
 - `target_size`: Size in `(height, width)` format.
 """
-function KittyDataset(image_dir, sequence; target_size, augmentations = nothing)
-    frames_dir = joinpath(image_dir, "sequences", sequence)
-    Ks = readlines(joinpath(frames_dir, "calib.txt"))
-    K = parse_matrix(Ks[1][5:end])
+function KittyDataset(image_dir, calib_path, poses_path; target_size, augmentations = nothing)
+    Ks = readlines(calib_path)
+    K = parse_K(Ks[26][12:end])
+    
+    cam2_path = joinpath(image_dir, "image_02/data")
+    
+    n_frames, original_size = _get_seq_info(cam2_path)
 
-    frames_dir = joinpath(frames_dir, "image_0")
-    n_frames, original_size = _get_seq_info(frames_dir)
+    poses_to_cam0 = []
+    for i in range(1, n_frames)
+        Ps = readlines(poses_path)
+        P = parse_P(Ps[i])
+        # P = reshape(P, (4, 3))|>transpose|>collect
+        P = [P; [0 0 0 1]]
+        push!(poses_to_cam0, P)
+    end
+
+    poses = []
+    for i in range(1, n_frames-1)
+        pose_src =  poses_to_cam0[i]
+        pose_dst = poses_to_cam0[i+1]
+        pose_src_to_dst = (pose_dst)^(-1)*pose_src
+        R_vec = try
+            
+            R_vec = SO3_log_map(clamp.(pose_src_to_dst[1:3, 1:3], 0, 1))
+        catch e
+            @show pose_src_to_dst[1:3, 1:3]
+            throw(e)
+        end
+        t = pose_src_to_dst[1:3, 4]
+        pose = Pose(R_vec, t)
+        push!(poses, pose)
+    end
 
     fx = mean(target_size ./ original_size) * K[1, 1]
     K = construct_intrinsic(fx, fx, target_size[2] ÷ 2, target_size[1] ÷ 2)
-    invK = inv(K)
+    invK = Base.inv(K)
 
-    target_id = 2
-    source_ids = [1, 3]
-    frame_ids = [1, 2, 3]
-    total_length = n_frames ÷ length(frame_ids)
+    total_length = n_frames-1
 
     height, width = target_size
 
     KittyDataset(
-        frames_dir, K, invK, (width, height),
-        source_ids, target_id, frame_ids, total_length,
+        image_dir, K, invK, (width, height), poses, total_length,
         augmentations)
 end
 
 @inline Base.length(dataset::KittyDataset) = dataset.total_length
 function Base.getindex(d::KittyDataset, i)
-    sid = (i - 1) * length(d.frame_ids)
-    images = map(
-        x -> load(joinpath(d.frames_dir, @sprintf("%.06d.png", sid + x - 1))),
-        d.frame_ids)
-
+    src = load(joinpath(d.frames_dir, "image_02/data", "$(lpad(i, 10, "0")).png" ))
+    tgt = load(joinpath(d.frames_dir, "image_02/data", "$(lpad(i+1, 10, "0")).png" ))
+    
     width, height = d.resolution
-    images = map(x -> imresize(x, (height, width)), images)
+    src, tgt = map(x -> imresize(x, (height, width)), (src, tgt))
     if d.augmentations ≢ nothing
-        images = d.augmentations(images)
+        (src,tgt) = d.augmentations((src,tgt))
     end
-
-    images = map(
-        x -> Flux.unsqueeze(permutedims(Float32.(channelview(x)), (2, 1)), 3),
-        images)
-    cat(images...; dims=4)
+    src,tgt = map(
+        x -> permutedims(Float32.(channelview(x)), (3, 2, 1)),
+        (src,tgt))
+    return src,tgt, d.pose[i]
+    # cat(images...; dims=4)
 end
 
 @inline DataLoaders.nobs(dataset::KittyDataset) = length(dataset)
@@ -70,10 +88,26 @@ function _get_seq_info(seq_dir::String)
     n_frames, original_size
 end
 
-function parse_matrix(line)
+function parse_K(line)
     m = parse.(Float64, split(line, " "))
     K = SMatrix{4, 4, Float64}(m..., 0, 0, 0, 1)'
     K[1:3, 1:3]
+end
+function parse_R(line)
+    m = parse.(Float64, split(line, " "))
+    R = SMatrix{3, 3, Float64}(m...)'
+    return R
+end
+function parse_T(line)
+    m = parse.(Float64, split(line, " "))
+    T = SVector{3, Float64}(m...)
+    return T
+end
+
+function parse_P(line)
+    m = parse.(Float64, split(line, " "))
+    P = SMatrix{4,3, Float64, 12}(m...)'
+    return P
 end
 
 @inline function construct_intrinsic(fx, fy, cx, cy)

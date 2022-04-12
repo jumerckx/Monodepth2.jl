@@ -91,25 +91,23 @@ function network_forward(model, rgb; N=32, K_inv)
     )
 
     #disparities, poses = model(rgb, disparity_src, nothing, nothing)
-    mpi = model(rgb, disparity_src, nothing, nothing)
+    mpi = model(rgb, disparity_src)
     return mpi
 end
 
 function loss_per_scale(src_img, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparity, pose; valid_mask_threshold=2)
     W, H, _, N, B = size(mpi_rgb)
 
-    K = K ./ 2^scale
+    K = K ./ eltype(K)(2^scale)
     CUDA.@allowscalar K[3, 3] = 0
 
     # TODO: K_inv kan misschien efficienter bepaald worden?
     K_inv = inv(K)
 
-
     meshgrid = create_meshgrid(H, W) |> transfer
     xyz_src = get_src_xyz_from_plane_disparity(meshgrid, disparity, K_inv)
 
     src_img_syn, src_depth_syn, blend_weights, weights = plane_volume_rendering(mpi_rgb, mpi_sigma, xyz_src)
-
     mpi_rgb = blend_weights .* Flux.unsqueeze(src_img, 4) .+ (1 .- blend_weights) .* mpi_rgb
     src_img_syn, src_depth_syn = weighted_sum_mpi(mpi_rgb, xyz_src, weights)
 
@@ -129,7 +127,13 @@ function loss_per_scale(src_img, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparit
     rgb_tgt_valid_mask = tgt_mask_syn .>= tgt_mask_syn
     loss_map = abs.(tgt_imgs_syn .- tgt_img) .* rgb_tgt_valid_mask # TODO: network output wordt niet upscaled zoals in Monodepth?
     loss_rgb_tgt = mean(loss_map) # TODO: met mean wordt de som gedeeld door het totaal aantal pixels, niet het aantal pixels dat binnen de mask zit.
+    loss_ssim_tgt = 1 - mean(transfer(SSIM())(tgt_imgs_syn, tgt_img)) # TODO: SSIM meegeven als argument
+    loss_smooth_src = smooth_loss(src_disparity_syn, src_img)
+    loss_smooth_tgt = smooth_loss(tgt_disparity_syn, tgt_img)
 
+    # loss_depth = D(src_depth_syn, src_depth) # TODO: mask
+    loss_depth = nothing
+    return loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth
 end
 
 function train_loss(
@@ -142,12 +146,12 @@ function train_loss(
         src_img,
         disparities)
 
-    ℒ = 0
+    ℒ = []
     for (scale, (mpi_rgb, mpi_sigma)) in zip(scales, mpi)
         src_img_scaled = upsample_bilinear(src_img, scale)
         tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
 
-        ℒ += loss_per_scale(
+        push!(ℒ, loss_per_scale(
             src_img_scaled,
             tgt_img_scaled,
             scale,
@@ -156,6 +160,14 @@ function train_loss(
             mpi_sigma,
             disparities,
             pose)
+        )
     end
     return ℒ
+end
+
+d(ŷ, y) = log(ŷ) - log(y)
+
+function D(ŷ, y)
+    ds = d.(ŷ, y)
+    mean(ds .^ 2) - mean(ds)^2
 end

@@ -116,8 +116,25 @@ function so3_exp_map(rvec)
 
     f1 = reshape(θ_inv .* sin.(θ), (1, 1, N))
     f2 = reshape(θ_inv .* θ_inv .* (one(T) .- cos.(θ)), (1, 1, N))
-
+    
     f1 .* skew .+ f2 .* skew² .+ eye_like(rvec, (3, 3))
+end
+
+function SO3_log_map(R::AbstractArray{T, 3}) where T # 3×3×B
+    rvec = zeros(3, size(R, 3))
+    for i in 1:size(R, 3)
+        R_slice = @view R[:, :, i]
+        θ = acos((tr(R_slice) - 1)/2)
+        ω = 1 / (2*sin(θ)) * [R_slice[3, 2]-R_slice[2, 3], R_slice[1, 3]-R_slice[3, 1], R_slice[2, 1]-R_slice[1, 2]]
+        rvec[:, i] .= θ .* ω
+    end
+    return rvec
+end
+
+function SO3_log_map(R::AbstractArray{T, 2}) where T # 3×3
+    θ = acos((tr(R) - 1)/2)
+    ω = 1 / (2*sin(θ)) * [R[3, 2]-R[2, 3], R[1, 3]-R[3, 1], R[2, 1]-R[1, 2]]
+    return θ .* ω
 end
 
 function hat(rvec)
@@ -128,7 +145,7 @@ function hat(rvec)
     S[1, 3, :] .=  rvec[2, :]
     S[3, 2, :] .=  rvec[1, :]
     S[2, 3, :] .= -rvec[1, :]
-    S
+    return S
 end
 
 function rrule(::typeof(hat), v)

@@ -59,10 +59,6 @@ struct TrainCache{S, B, P, I}
     scales::Vector{Float64}
 end
 
-include("dtk.jl")
-include("kitty.jl")
-include("dchain.jl")
-
 include("io_utils.jl")
 include("utils.jl")
 include("render.jl")
@@ -70,6 +66,10 @@ include("depth_decoder.jl")
 include("pose_decoder.jl")
 include("model.jl")
 include("simple_depth.jl")
+
+include("dtk.jl")
+include("kitty.jl")
+include("dchain.jl")
 
 include("training.jl")
 end

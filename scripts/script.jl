@@ -38,21 +38,35 @@ in_channels = grayscale ? 1 : 3
 augmentations = FlipX(0.5)
 target_size=(128, 416)
 
-# kitty_dir = "/home/pxl-th/projects/datasets/kitty-dataset"
+kitty_dir = "/scratch/vop_BC04/KITTI/"
 # datasets = [
+    
 #     KittyDataset(kitty_dir, s; target_size, augmentations)
 #     for s in map(i -> @sprintf("%02d", i), 0:21)]
-
 datasets = []
-dtk_dir = "../depth10k"
-dtk_dataset = Depth10k(
-    joinpath(dtk_dir, "imgs"),
-    readlines(joinpath(dtk_dir, "trainable-nonstatic"));
-    augmentations, grayscale)
-push!(datasets, dtk_dataset)
+for datum in filter(isdir, joinpath.(kitty_dir,  readdir(kitty_dir)))
+    datum_path = joinpath(kitty_dir, datum)
+    calib_path = joinpath(datum_path, "calib_cam_to_cam.txt")
+    for drive in filter(isdir, joinpath.(datum_path,  readdir(datum_path)))
+        poses_path = joinpath(drive, "poses.txt")
+        push!(datasets, KittyDataset(drive, calib_path, poses_path; target_size, augmentations)) 
+    end
+end
+
+datasets[1][1]
+
+# datasets = []
+# dtk_dir = "../depth10k"
+# dtk_dataset = Depth10k(
+#     joinpath(dtk_dir, "imgs"),
+#     readlines(joinpath(dtk_dir, "trainable-nonstatic"));
+#     augmentations, grayscale)
+# push!(datasets, dtk_dataset)
 
 dchain = DChain(datasets)
 dataset = datasets[begin]
+
+dchain[1]
 
 width, height = dataset.resolution
 parameters = Params(;
@@ -107,10 +121,20 @@ mpi = Monodepth.network_forward(
 
 src_img = x
 tgt_img = CUDA.rand(size(src_img)...)
+
+
+
+
 pose = Monodepth.Pose(CUDA.rand(3, 2), CUDA.rand(3, 2))
-K = CUDA.rand(3, 3)
+K = KittiDataSet.K
+
+
+
+
+
 invK = Monodepth.inv(K)
-@profview CUDA.@sync Monodepth.train_loss(
+
+Monodepth.train_loss(
     model,
     x,
     tgt_img,
@@ -118,3 +142,5 @@ invK = Monodepth.inv(K)
     K,
     invK,
     scales)
+
+transfer(SSIM())(tgt_img, tgt_img)
