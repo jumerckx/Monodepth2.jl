@@ -42,8 +42,8 @@ function (m::Model)(x, disparity; num_bins=32)
         f = cat(
             repeat(Flux.unsqueeze(f, 4), 1, 1, 1, num_bins, 1),
             repeat(embedded_disparity, size(f, 1), size(f, 2)),
-            dims=3
-        )
+            dims=3)
+        reshape(f, size(f, 1), size(f, 2), size(f, 3), size(f, 4)*size(f, 5))
 
     # depth_decoder_x = map(features) do f
     #     f = cat(
@@ -53,8 +53,9 @@ function (m::Model)(x, disparity; num_bins=32)
     #     ) # H×W×(channels+embedding)×planes×batch_size
 
         # merge plane- and batch-dimension together:
-        reshape(f, size(f, 1), size(f, 2), size(f, 3), size(f, 4)*size(f, 5))
     end
+    @show size.(depth_decoder_x)
+
     
     disparities = m.depth_decoder(depth_decoder_x)
     disparities = map(disparities) do d

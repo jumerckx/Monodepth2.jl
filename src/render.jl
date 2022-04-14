@@ -1,17 +1,17 @@
-import LinearAlgebra
+import LinearAlgebra: inv, inv!
 
-function inv!(x)
+function LinearAlgebra.inv!(x::Vector{CuArray{T, N, M}}) where {T, N, M}
     pivot, info = CUDA.CUBLAS.getrf_batched!(x, true)
     _,_,x = CUDA.CUBLAS.getri_batched(x, pivot)
     return x
 end
-function inv!(x::CuArray{T, 2}) where T
+function LinearAlgebra.inv!(x::CuArray{T, 2}) where T
     return inv!([x])[1]
 end
-function inv!(x::CuArray{T, 3}) where T
+function LinearAlgebra.inv!(x::CuArray{T, 3}) where T
     cat(inv!(collect(eachslice(x, dims=3)))..., dims=3) # TODO: moet sneller kunnen
 end
-function inv(x::CuArray{T, N}) where {T, N}
+function LinearAlgebra.inv(x::CuArray{T, N, M}) where {T, N, M}
     x = deepcopy(x)
     return inv!(x)
 end
@@ -40,13 +40,19 @@ end
 
 function plane_volume_rendering(rgb, sigma, xyz)
     W, H, _, N, B = size(rgb)
-    diff = permutedims(xyz[:, :, :, 2:end,:] .- xyz[:, :, :, 1:end-1, :], (2, 3, 1, 4, 5))
-    dist = cat(norm(diff, dims=3), CUDA.fill(1f3, W, H, 1, 1, B), dims=4) # TODO: TinyNERF gebruikt fill met 1e10
+    dist = ignore_derivatives() do
+        diff = permutedims(xyz[:, :, :, 2:end,:] .- xyz[:, :, :, 1:end-1, :], (2, 3, 1, 4, 5))
+        dist = cat(norm(diff, dims=3), CUDA.fill(1f3, W, H, 1, 1, B), dims=4) # TODO: TinyNERF gebruikt fill met 1e10
+        return dist
+    end
     transparency = exp.(-dist .* sigma)
     alpha = 1 .- transparency
 
     transparency_acc = cumprod(transparency .+ eltype(transparency)(1e-6), dims=4) # TODO: is ".+ 1e-6 " nodig?
-    transparency_acc = cat(CUDA.ones(W, H, 1, 1, B), transparency_acc[:, :, :, 1:end-1, :], dims=4)
+    cu_ones = ignore_derivatives() do
+        CUDA.ones(W, H, 1, 1, B)
+    end
+    transparency_acc = cat(cu_ones, transparency_acc[:, :, :, 1:end-1, :], dims=4)
 
     weights = transparency_acc .* alpha
     
@@ -97,8 +103,10 @@ function sample(src, depth_src, pose, K, K_inv)
     
     valid_mask = (meshgrid_src[1, :, :] .< W .* meshgrid_src[1, :, :] .>= 0) .* (meshgrid_src[2, :, :] .< H .* meshgrid_src[2, :, :] .>= 0)
     
-    meshgrid_src[1, :, :] .= (meshgrid_src[1, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (W/2)
-    meshgrid_src[2, :, :] .= (meshgrid_src[2, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (H/2)
+    # meshgrid_src[1, :, :] .= (meshgrid_src[1, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (W/2)
+    # meshgrid_src[2, :, :] .= (meshgrid_src[2, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (H/2)
+
+    meshgrid_src = vcat((meshgrid_src[1:1, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (W/2), (meshgrid_src[2:2, :, :] .+ eltype(meshgrid_src)(0.5)) ./ (H/2))
 
     meshgrid_src = reshape(meshgrid_src, (2, W, H, :))
         

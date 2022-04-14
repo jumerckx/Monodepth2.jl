@@ -95,11 +95,14 @@ function network_forward(model, rgb; N=32, K_inv)
     return mpi
 end
 
-function loss_per_scale(src_img, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparity, pose; valid_mask_threshold=2)
+function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparity, pose; valid_mask_threshold=2)
     W, H, _, N, B = size(mpi_rgb)
 
-    K = K ./ eltype(K)(2^scale)
-    CUDA.@allowscalar K[3, 3] = 0
+    K = ignore_derivatives() do
+        K = K ./ eltype(K)(2^scale)
+        CUDA.@allowscalar K[3, 3] = 0
+        return K
+    end
 
     # TODO: K_inv kan misschien efficienter bepaald worden?
     K_inv = inv(K)
@@ -131,13 +134,14 @@ function loss_per_scale(src_img, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparit
     loss_smooth_src = smooth_loss(src_disparity_syn, src_img)
     loss_smooth_tgt = smooth_loss(tgt_disparity_syn, tgt_img)
 
-    # loss_depth = D(src_depth_syn, src_depth) # TODO: mask
-    loss_depth = nothing
+    mask = src_depth .!= 0
+    # loss_depth = D(src_depth_syn[mask], src_depth[mask])
+    loss_depth = 0
     return loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth
 end
 
 function train_loss(
-    model, src_img::AbstractArray{T}, tgt_img::AbstractArray{T}, pose, K, invK, scales;
+    model, src_img::AbstractArray{T}, src_depth::AbstractArray{T}, tgt_img::AbstractArray{T}, pose, K, invK, scales;
     N=32, near=1, far=0.001
 ) where {T}
     W, H, _, B = size(src_img)
@@ -146,21 +150,21 @@ function train_loss(
         src_img,
         disparities)
 
-    ℒ = []
+    ℒ = 0
     for (scale, (mpi_rgb, mpi_sigma)) in zip(scales, mpi)
         src_img_scaled = upsample_bilinear(src_img, scale)
         tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
 
-        push!(ℒ, loss_per_scale(
+        ℒ = ℒ + sum(loss_per_scale(
             src_img_scaled,
+            src_depth,
             tgt_img_scaled,
             scale,
             K,
             mpi_rgb,
             mpi_sigma,
             disparities,
-            pose)
-        )
+            pose))
     end
     return ℒ
 end

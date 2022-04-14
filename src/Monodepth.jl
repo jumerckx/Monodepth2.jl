@@ -46,24 +46,19 @@ Base.@kwdef struct Params
     batch_size::Int64
 end
 
-struct TrainCache{S, B, P, I}
+struct TrainCache{S, I}
     ssim::S
-    backprojections::B
-    projections::P
-
     K::I
     invK::I
-
-    target_id::Int64
-    source_ids::Vector{Int64}
     scales::Vector{Float64}
 end
 
+include("cumprod_adjoint.jl")
+include("pose_decoder.jl")
 include("io_utils.jl")
 include("utils.jl")
 include("render.jl")
 include("depth_decoder.jl")
-include("pose_decoder.jl")
 include("model.jl")
 include("simple_depth.jl")
 

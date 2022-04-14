@@ -62,18 +62,20 @@ end
 
 @inline Base.length(dataset::KittyDataset) = dataset.total_length
 function Base.getindex(d::KittyDataset, i)
-    src = load(joinpath(d.frames_dir, joinpath("image_02/data", d.imagenames[i]) ))
-    tgt = load(joinpath(d.frames_dir, joinpath("proj_depth/groundtruth", d.imagenames[i+1] )))
+    src = load(joinpath(d.frames_dir, "image_02", "data", d.imagenames[i]) )
+    tgt = load(joinpath(d.frames_dir, "image_02", "data", d.imagenames[i+1] ))
+    depth = load(joinpath(d.depth_dir, "image_02", d.imagenames[i]))
     
     width, height = d.resolution
     src, tgt = map(x -> imresize(x, (height, width)), (src, tgt))
     if d.augmentations ≢ nothing
-        (src,tgt) = d.augmentations((src,tgt))
+        (src, depth, tgt) = d.augmentations((src, depth, tgt))
     end
     src,tgt = map(
         x -> permutedims(Float32.(channelview(x)), (3, 2, 1)),
         (src,tgt))
-    return src,tgt, d.pose[i]
+    depth = Flux.unsqueeze(permutedims(Float32.(channelview(depth)), (2, 1)), 3)
+    return src, depth, tgt, d.pose[i]
     # cat(images...; dims=4)
 end
 

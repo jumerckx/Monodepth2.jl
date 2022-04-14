@@ -22,3 +22,15 @@ end
 
 get_pb(n, desc::String) = Progress(
     n; desc, dt=1, barglyphs=BarGlyphs("[=> ]"), barlen=50, color=:white)
+
+import DataLoaders.collate
+function collate(samples::AbstractVector{<:Monodepth.Pose})
+    rvec = similar(samples[1].rvec, (3, length(samples)))
+    tvec = similar(rvec)
+    
+    for (i, sample) in enumerate(samples)
+        rvec[:, i] .= sample.rvec
+        tvec[:, i] .= sample.tvec
+    end
+    return Monodepth.Pose(rvec, tvec)
+end
