@@ -100,7 +100,7 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
 
     K = ignore_derivatives() do
         K = K ./ eltype(K)(2^scale)
-        CUDA.@allowscalar K[3, 3] = 0
+        CUDA.@allowscalar K[3, 3] = 1
         return K
     end
 
@@ -113,7 +113,6 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
     src_img_syn, src_depth_syn, blend_weights, weights = plane_volume_rendering(mpi_rgb, mpi_sigma, xyz_src)
     mpi_rgb = blend_weights .* Flux.unsqueeze(src_img, 4) .+ (1 .- blend_weights) .* mpi_rgb
     src_img_syn, src_depth_syn = weighted_sum_mpi(mpi_rgb, xyz_src, weights)
-
     src_disparity_syn = 1 ./ src_depth_syn
 
     # TODO: scale_factor?
@@ -131,15 +130,13 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
     loss_map = abs.(tgt_imgs_syn .- tgt_img) .* rgb_tgt_valid_mask # TODO: network output wordt niet upscaled zoals in Monodepth?
     loss_rgb_tgt = mean(loss_map) # TODO: met mean wordt de som gedeeld door het totaal aantal pixels, niet het aantal pixels dat binnen de mask zit.
     loss_ssim_tgt = 1 - mean(transfer(SSIM())(tgt_imgs_syn, tgt_img)) # TODO: SSIM meegeven als argument
-    loss_smooth_src = smooth_loss(src_disparity_syn, src_img)
-    loss_smooth_tgt = smooth_loss(tgt_disparity_syn, tgt_img)
-
+    loss_smooth_src = smooth_loss(src_disparity_syn[:, :, 1, :], src_img)
+    loss_smooth_tgt = smooth_loss(tgt_disparity_syn[:, :, 1, :], tgt_img)
     mask = src_depth .!= 0
-    # loss_depth = D(src_depth_syn[mask], src_depth[mask])
-    loss_depth = 0
-    return loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth
+    loss_depth = D(src_depth_syn[mask], src_depth[mask])
+    # loss_depth = 0
+    return src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth
 end
-
 function train_loss(
     model, src_img::AbstractArray{T}, src_depth::AbstractArray{T}, tgt_img::AbstractArray{T}, pose, K, invK, scales;
     N=32, near=1, far=0.001
@@ -148,25 +145,28 @@ function train_loss(
     disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(N, B; near=eltype(src_img)(near), far=eltype(src_img)(far))
     mpi = model(
         src_img,
-        disparities)
+        disparities;
+        num_bins=N)
 
     ℒ = 0
+    src_disparity_syn = nothing
     for (scale, (mpi_rgb, mpi_sigma)) in zip(scales, mpi)
         src_img_scaled = upsample_bilinear(src_img, scale)
         tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
-
-        ℒ = ℒ + sum(loss_per_scale(
+        src_depth_scaled = upsample_bilinear(src_depth, scale)
+        src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth = loss_per_scale(
             src_img_scaled,
-            src_depth,
+            src_depth_scaled,
             tgt_img_scaled,
             scale,
             K,
             mpi_rgb,
             mpi_sigma,
             disparities,
-            pose))
+            pose)
+        ℒ += sum((loss_depth))
     end
-    return ℒ
+    return ℒ, src_disparity_syn
 end
 
 d(ŷ, y) = log(ŷ) - log(y)

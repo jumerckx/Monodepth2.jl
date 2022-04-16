@@ -121,11 +121,15 @@ function so3_exp_map(rvec)
 end
 
 function SO3_log_map(R::AbstractArray{T, 3}) where T # 3×3×B
-    rvec = zeros(3, size(R, 3))
+    rvec = zeros(eltype(R), 3, size(R, 3))
     for i in 1:size(R, 3)
         R_slice = @view R[:, :, i]
         θ = acos((tr(R_slice) - 1)/2)
-        ω = 1 / (2*sin(θ)) * [R_slice[3, 2]-R_slice[2, 3], R_slice[1, 3]-R_slice[3, 1], R_slice[2, 1]-R_slice[1, 2]]
+        if (θ ≈ 0)
+            ω = [0, 0, 0]
+        else
+            ω = 1 / (2*sin(θ)) * [R_slice[3, 2]-R_slice[2, 3], R_slice[1, 3]-R_slice[3, 1], R_slice[2, 1]-R_slice[1, 2]]
+        end
         rvec[:, i] .= θ .* ω
     end
     return rvec
@@ -133,7 +137,11 @@ end
 
 function SO3_log_map(R::AbstractArray{T, 2}) where T # 3×3
     θ = acos((tr(R) - 1)/2)
-    ω = 1 / (2*sin(θ)) * [R[3, 2]-R[2, 3], R[1, 3]-R[3, 1], R[2, 1]-R[1, 2]]
+    if (θ ≈ 0)
+        ω = [0, 0, 0]
+    else
+        ω = 1 / (2*sin(θ)) * [R[3, 2]-R[2, 3], R[1, 3]-R[3, 1], R[2, 1]-R[1, 2]]
+    end
     return θ .* ω
 end
 

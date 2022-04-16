@@ -11,9 +11,16 @@ end
 function LinearAlgebra.inv!(x::CuArray{T, 3}) where T
     cat(inv!(collect(eachslice(x, dims=3)))..., dims=3) # TODO: moet sneller kunnen
 end
-function LinearAlgebra.inv(x::CuArray{T, N, M}) where {T, N, M}
+function LinearAlgebra.inv(x::CuArray{T, N}) where {T, N}
     x = deepcopy(x)
     return inv!(x)
+end
+function ChainRulesCore.rrule(::typeof(LinearAlgebra.inv), x::CuArray{T, 3}) where T
+    Ω = inv(x)
+    function inv_pullback(ΔΩ)
+        return NoTangent(), -permutedims(Ω, (2, 1, 3)) ⊠ ΔΩ ⊠ permutedims(Ω, (2, 1, 3))
+    end
+    return Ω, inv_pullback
 end
 
 function uniformly_sample_disparity_from_linspace_bins(num_bins, batch_size; near=1f0, far=0.001f0)
@@ -67,7 +74,7 @@ function weighted_sum_mpi(rgb, xyz, weights)
     # assume is_bg_depth_inf == false:
     weights_sum = dropdims(sum(weights, dims=4), dims=4) # sum over planes
     depth_out = dropdims(sum(weights .* permutedims(xyz[3:3, :, :, :, :], (2, 3, 1, 4, 5)), dims=4), dims=4) ./ (weights_sum .+ 1e-5)
-
+    
     return rgb_out, depth_out
 end
 
@@ -91,12 +98,13 @@ function sample(src, depth_src, pose, K, K_inv)
     n = transfer([0 0 1])
 
     temp = Flux.unsqueeze(t ⊠ n, 3) ./ -reshape(depth_src, (1, 1, size(depth_src, 1), size(depth_src, 2)))
-    # @show size(te mp), size(R)
+    # @show size(temp), size(R)
     H_tgt_src = K ⊠ (reshape(Flux.unsqueeze(R, 3) .- temp, (3, 3, :))) ⊠ K_inv
     
     H_src_tgt = inv(H_tgt_src)
-    
-    meshgrid_tgt_homo = transfer(reshape(create_meshgrid(H, W), (3, :)) .- [1, 1, 0]) # TODO: misschien beter cachen?
+    meshgrid_tgt_homo = ignore_derivatives() do
+        transfer(reshape(create_meshgrid(H, W), (3, :)) .- [1, 1, 0]) # TODO: misschien beter cachen?
+    end
     meshgrid_src = H_src_tgt ⊠ meshgrid_tgt_homo
     
     meshgrid_src = meshgrid_src[1:2, :, :] ./ meshgrid_src[3:3, :, :]

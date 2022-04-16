@@ -67,7 +67,7 @@ function Base.getindex(d::KittyDataset, i)
     depth = load(joinpath(d.depth_dir, "image_02", d.imagenames[i]))
     
     width, height = d.resolution
-    src, tgt = map(x -> imresize(x, (height, width)), (src, tgt))
+    src, tgt, depth = map(x -> imresize(x, (height, width)), (src, tgt, depth))
     if d.augmentations ≢ nothing
         (src, depth, tgt) = d.augmentations((src, depth, tgt))
     end
