@@ -1,23 +1,13 @@
 using LinearAlgebra
 using Printf
 using Statistics
+using Images
 
 using Monodepth, Augmentations
-# import Monodepth:BSON
 using BSON: @save, @load
-using DataLoaders
-# using FileIO
-# using ImageCore
-# using ImageTransformations
-# using MLDataPattern: shuffleobs
-# using VideoIO
-using ProgressMeter
-# using Plots
-# using StaticArrays
-# gr()
 
-# import ChainRulesCore: rrule
-# using ChainRulesCore
+using DataLoaders
+using ProgressMeter
 using CUDA
 using Flux
 using Monodepth.ResNet
@@ -28,8 +18,8 @@ function train(; η=1e-4, model=nothing, θ=nothing)
     transfer = device ∘ precision
     @show transfer
 
-    log_dir = "/scratch/vop_BC04/out/logs"
-    save_dir = "/scratch/vop_BC04/out/models"
+    log_dir = "/scratch/vop_BC04/out/MINE/logs2"
+    save_dir = "/scratch/vop_BC04/out/MINE/models2"
 
     isdir(log_dir) || mkpath(log_dir)
     isdir(save_dir) || mkpath(save_dir)
@@ -105,7 +95,7 @@ function train(; η=1e-4, model=nothing, θ=nothing)
         println("Backward:")
         @time begin
             ∇ = gradient(θ) do
-                losses = train_loss(model, src_img, src_depth, tgt_img,
+                loss = train_loss(model, src_img, src_depth, tgt_img,
                     pose, train_cache.K, train_cache.invK, scales, N=2)[1]
             end
         end
@@ -133,35 +123,38 @@ function train(; η=1e-4, model=nothing, θ=nothing)
             # end
 
             loss_cpu = 0.0
+            losses_cpu = 0.0
             disparity, warped, vis_loss = nothing, nothing, nothing
             do_visualization = i % log_iter == 0 || i == 1
 
 
             Flux.Optimise.update!(optimizer, θ, gradient(θ) do
-                loss, disparity = train_loss(
+                loss, disparity, losses = train_loss(
                     model, src_img, src_depth, tgt_img,
                     pose, train_cache.K, train_cache.invK, scales, N=8)
                 # loss = train_loss(
                 #     model, src_img, src_depth, tgt_img,
                 #     pose, train_cache.K, train_cache.invK, scales, N=2)
                 loss_cpu = cpu(loss)
+                losses_cpu = cpu(losses)
                 loss
             end)
 
             if do_visualization
-                save_disparity(cpu(disparity[:, :, 1, 1]))
-            #     colorview(RGB, permutedims(collect(x[:, :, :, 1]), (3, 2, 1))) |> display
+                temp = cpu(disparity[:, :, 1, 1])
+                save_disparity(temp)
+                colorview(RGB, permutedims(collect(src_img[:, :, :, 1]), (3, 2, 1))) |> display
 
-            #     # save_disparity(
-            #     #     disparity[:, :, 1, 1],
-            #     #     joinpath(log_dir, "loss-$epoch-$i.png"))
+                save_disparity(
+                    temp,
+                    joinpath(log_dir, "loss-$epoch-$i.png"))
             end
-            # if i % save_iter == 0
-            #     model_host = cpu(model)
-            #     # @save joinpath(save_dir, "$epoch-$i-$loss_cpu.bson") model_host
-            # end
+            if i % save_iter == 0
+                model_host = cpu(model)
+                @save joinpath(save_dir, "$epoch-$i-$loss_cpu.bson") model_host
+            end
 
-            next!(bar; showvalues=[(:i, i), (:loss, loss_cpu)])
+            next!(bar; showvalues=[(:i, i), (:loss, losses_cpu)])
         end
     end
 end
@@ -174,11 +167,11 @@ transfer = device ∘ precision
 @show transfer
 
 in_channels = 3
-augmentations = FlipX(0.5)
+# augmentations = FlipX(0.5)
+augmentations = nothing
 
-
-# target_size= (128,416)
-target_size = (64, 64)
+target_size= (128,416)
+# target_size = (64, 64)
 
 
 img_dir = "/scratch/vop_BC04/KITTI/"
@@ -215,6 +208,25 @@ train_cache = TrainCache(
     transfer(Array(dataset.invK)),
     scales)
 
+encoder = ResidualNetwork(18; in_channels, classes=nothing)
+encoder_channels = collect(encoder.stages)
+model = transfer(Model(
+    encoder,
+    DepthDecoder(; encoder_channels, scale_levels, embedding_levels=21),
+    PoseDecoder(encoder_channels[end])))
+θ = Flux.params(model)
+
+x_host = first(DataLoader(DataLoaders.shuffleobs(dchain), 4))
+src_img, src_depth, tgt_img, pose = transfer.(x_host)
+
+disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(8, 4; near=eltype(src_img)(1), far=eltype(src_img)(0.001))
+mpi_rgb, mpi_sigma = model(
+    src_img,
+    disparities;
+    num_bins=8)[end]
+
+src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth = Monodepth.loss_per_scale(src_img, src_depth, tgt_img, scales[end], train_cache.K, mpi_rgb, mpi_sigma, disparities, pose)
+
 f() = begin
     for i in 1:100
         encoder = ResidualNetwork(18; in_channels, classes=nothing)
@@ -234,24 +246,3 @@ f() = begin
         out = train_loss(model, src_img, src_depth, tgt_img, pose, train_cache.K, train_cache.invK, scales, N=2)
     end
 end
-
-first(dchain)
-dchain[2][4]
-
-length(dchain)
-
-dchain[489][4]
-
-for i in 1:length(dchain)
-    if any(isnan.(dchain[i][4].rvec))
-        println(i)
-    end
-end
-
-inv(CUDA.rand(3, 3, 2))
-
-K = cu([73.5085 0.0 29.3441
-    0.0 73.5085 29.3441
-    0.0 0.0 0.0])
-
-Monodepth.inv(K)

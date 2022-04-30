@@ -109,20 +109,28 @@ function bilateral_guided_depth_completion(depth, img; iters=1, device=CPU, S=(3
 	return depth_out.parent[(1:H) .+ S[1], (1:W) .+ S[2]]
 end
 
-# begin # testafbeeldingen inladen.
-# 	img = Float64.(channelview(load("./scripts/bilateral_guided_filtering/img.png")))
-# 	# Gray.(img)|>display
-# 	sparse_depth = Float64.(channelview(load("./scripts/bilateral_guided_filtering/depth.png")))
-# 	# Gray.(sparse_depth)|>display
-# 	H, W = size(img)
-# end
+begin # testafbeeldingen inladen.
+	img = Float64.(channelview(load("./scripts/bilateral_guided_filtering/img.png")))
+	# Gray.(img)|>display
+	sparse_depth = Float64.(channelview(load("./scripts/bilateral_guided_filtering/depth.png")))
+	# Gray.(sparse_depth)|>display
+	H, W = size(img)
+end
 
-# # test op gpu (CUDADevice):
-# CUDA.@time begin
-# 	temp = bilateral_guided_depth_completion(cu(sparse_depth), cu(img), S=(3, 3), iters=2, device=CUDADevice) # cu plaatst array op gpu.
-# 	temp = collect(temp) # terug op CPU plaatsen.
-# 	Gray.(temp)|>display # Float omzetten naar type Gray zodat afbeelding kan worden weergegeven.
-# end
+# test op gpu (CUDADevice):
+sparse_depth, img = cu(sparse_depth), cu(img)
+sparse_depth = CUDA.rand(100, 100) .* (CUDA.rand(100, 100) .> 0.5)
+img = CUDA.rand(100, 100)
+@time for _ in 1:100
+	CUDA.@sync bilateral_guided_depth_completion(sparse_depth, img, S=(3, 3), iters=1,
+	device=CUDADevice, workgroupsize=(8, 8))
+end
+
+CUDA.@time begin
+	temp = bilateral_guided_depth_completion(cu(sparse_depth), cu(img), S=(3, 3), iters=2, device=CUDADevice) # cu plaatst array op gpu.
+	temp = collect(temp) # terug op CPU plaatsen.
+	Gray.(temp)|>display # Float omzetten naar type Gray zodat afbeelding kan worden weergegeven.
+end
 
 # # test op CPU:
 # Gray.(bilateral_guided_depth_completion(sparse_depth, img, S=(1, 1), iters=2, device=CPU))

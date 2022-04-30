@@ -55,7 +55,7 @@ function plane_volume_rendering(rgb, sigma, xyz)
     transparency = exp.(-dist .* sigma)
     alpha = 1 .- transparency
 
-    transparency_acc = cumprod(transparency .+ eltype(transparency)(1e-6), dims=4) # TODO: is ".+ 1e-6 " nodig?
+    transparency_acc = cumprod(transparency .+ eltype(transparency)(1e-6), dims=4) 
     cu_ones = ignore_derivatives() do
         CUDA.ones(W, H, 1, 1, B)
     end
@@ -64,7 +64,9 @@ function plane_volume_rendering(rgb, sigma, xyz)
     weights = transparency_acc .* alpha
     
     rgb_out, depth_out = weighted_sum_mpi(rgb, xyz, weights)
-
+    ignore_derivatives() do
+        @infiltrate any(iszero.(depth_out))
+    end
     return rgb_out, depth_out, transparency_acc, weights
 end
 
@@ -74,7 +76,9 @@ function weighted_sum_mpi(rgb, xyz, weights)
     # assume is_bg_depth_inf == false:
     weights_sum = dropdims(sum(weights, dims=4), dims=4) # sum over planes
     depth_out = dropdims(sum(weights .* permutedims(xyz[3:3, :, :, :, :], (2, 3, 1, 4, 5)), dims=4), dims=4) ./ (weights_sum .+ 1e-5)
-    
+    ignore_derivatives() do
+        @infiltrate any(iszero.(depth_out))
+    end
     return rgb_out, depth_out
 end
 

@@ -88,13 +88,14 @@ function network_forward(model, rgb; N=32, K_inv)
         meshgrid_src,
         disparity_src,
         K_inv
-    )
-
-    #disparities, poses = model(rgb, disparity_src, nothing, nothing)
-    mpi = model(rgb, disparity_src)
-    return mpi
+        )
+        
+        #disparities, poses = model(rgb, disparity_src, nothing, nothing)
+        mpi = model(rgb, disparity_src)
+        return mpi
 end
-
+    
+using Infiltrator
 function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparity, pose; valid_mask_threshold=2)
     W, H, _, N, B = size(mpi_rgb)
 
@@ -135,6 +136,9 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
     mask = src_depth .!= 0
     loss_depth = D(src_depth_syn[mask], src_depth[mask])
     # loss_depth = 0
+    ignore_derivatives() do 
+        @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth))) || any(isnan.(src_disparity_syn))
+    end
     return src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth
 end
 function train_loss(
@@ -149,6 +153,7 @@ function train_loss(
         num_bins=N)
 
     ℒ = 0
+    total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt = 0 , 0, 0, 0, 0
     src_disparity_syn = nothing
     for (scale, (mpi_rgb, mpi_sigma)) in zip(scales, mpi)
         src_img_scaled = upsample_bilinear(src_img, scale)
@@ -164,9 +169,19 @@ function train_loss(
             mpi_sigma,
             disparities,
             pose)
-        ℒ += sum((loss_depth))
+        ℒ += sum((0.15*loss_rgb_tgt, 0.85*loss_ssim_tgt, 0.5*loss_depth))
+        ignore_derivatives() do 
+            @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth)))
+        end
+        total_loss_depth += loss_depth
+        total_loss_rgb_tgt += loss_rgb_tgt
+        total_loss_ssim_tgt += loss_ssim_tgt
+        total_loss_smooth_tgt += loss_smooth_tgt
+        total_loss_smooth_src += loss_smooth_src
+
+
     end
-    return ℒ, src_disparity_syn
+    return ℒ, src_disparity_syn, (total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt)
 end
 
 d(ŷ, y) = log(ŷ) - log(y)

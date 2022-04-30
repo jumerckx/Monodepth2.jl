@@ -121,6 +121,7 @@ function so3_exp_map(rvec)
 end
 
 function SO3_log_map(R::AbstractArray{T, 3}) where T # 3×3×B
+
     rvec = zeros(eltype(R), 3, size(R, 3))
     for i in 1:size(R, 3)
         R_slice = @view R[:, :, i]
@@ -168,7 +169,7 @@ function rrule(::typeof(hat), v)
     end
     return Y, hat_pullback
 end
-
+using Infiltrator
 """
 Compute smoothness loss for a disparity image.
 `image` is used for edge-aware smoothness.
@@ -198,7 +199,12 @@ function smooth_loss(disparity, image)
     ∇image_x = ∇image_x[:, :, 1, :]
     ∇image_y = ∇image_y[:, :, 1, :]
 
-    mean(∇disparity_x .* exp.(-∇image_x)) + mean(∇disparity_y .* exp.(-∇image_y))
+    out = mean(∇disparity_x .* exp.(-∇image_x)) + mean(∇disparity_y .* exp.(-∇image_y))
+    ignore_derivatives() do 
+        @infiltrate isnan(out)
+    end
+    return out
+
 end
 
 function disparity_to_depth(disparity::AbstractArray{T}, min_depth, max_depth) where T
