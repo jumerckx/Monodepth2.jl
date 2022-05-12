@@ -3,3 +3,4 @@ models*/
 logs*/
 .vscode/*
 settings.json
+*.nsys-rep
