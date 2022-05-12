@@ -88,19 +88,19 @@ function network_forward(model, rgb; N=32, K_inv)
         meshgrid_src,
         disparity_src,
         K_inv
-        )
-        
-        #disparities, poses = model(rgb, disparity_src, nothing, nothing)
-        mpi = model(rgb, disparity_src)
-        return mpi
+    )
+
+    #disparities, poses = model(rgb, disparity_src, nothing, nothing)
+    mpi = model(rgb, disparity_src)
+    return mpi
 end
-    
+
 using Infiltrator
 function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigma, disparity, pose; valid_mask_threshold=2)
     W, H, _, N, B = size(mpi_rgb)
 
     K = ignore_derivatives() do
-        K = K ./ eltype(K)(2^scale)
+        K = K .* eltype(K)(scale)
         CUDA.@allowscalar K[3, 3] = 1
         return K
     end
@@ -127,16 +127,17 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
         K_inv,
         K)
 
-    rgb_tgt_valid_mask = tgt_mask_syn .>= tgt_mask_syn
+    rgb_tgt_valid_mask = tgt_mask_syn[:, :, :, 1, :] .>= valid_mask_threshold
     loss_map = abs.(tgt_imgs_syn .- tgt_img) .* rgb_tgt_valid_mask # TODO: network output wordt niet upscaled zoals in Monodepth?
     loss_rgb_tgt = mean(loss_map) # TODO: met mean wordt de som gedeeld door het totaal aantal pixels, niet het aantal pixels dat binnen de mask zit.
-    loss_ssim_tgt = 1 - mean(transfer(SSIM())(tgt_imgs_syn, tgt_img)) # TODO: SSIM meegeven als argument
+    loss_ssim_tgt = 1 - mean(transfer(SSIM())(tgt_imgs_syn .* rgb_tgt_valid_mask, tgt_img .* rgb_tgt_valid_mask)) # TODO: SSIM meegeven als argument
     loss_smooth_src = smooth_loss(src_disparity_syn[:, :, 1, :], src_img)
     loss_smooth_tgt = smooth_loss(tgt_disparity_syn[:, :, 1, :], tgt_img)
     mask = src_depth .!= 0
     loss_depth = D(src_depth_syn[mask], src_depth[mask])
     # loss_depth = 0
-    ignore_derivatives() do 
+    ignore_derivatives() do
+        @infiltrate loss_smooth_tgt > 100
         @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth))) || any(isnan.(src_disparity_syn))
     end
     return src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth
@@ -145,41 +146,54 @@ function train_loss(
     model, src_img::AbstractArray{T}, src_depth::AbstractArray{T}, tgt_img::AbstractArray{T}, pose, K, invK, scales;
     N=32, near=1, far=0.001
 ) where {T}
+
     W, H, _, B = size(src_img)
-    disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(N, B; near=eltype(src_img)(near), far=eltype(src_img)(far))
-    mpi = model(
-        src_img,
-        disparities;
-        num_bins=N)
+    minimal_depth = max(near, -minimum(pose.tvec[3, :]) + 0.1) # eerste plane mag vanaf 10cm van de camera liggen.
+    disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(N, B; near=eltype(src_img)(1 / minimal_depth), far=eltype(src_img)(far))
+    # disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(N, B; near=eltype(src_img)(near), far=eltype(src_img)(far))
+    NVTX.@range "model" begin
+        mpi = model(
+            src_img,
+            disparities;
+            num_bins=N)
+    end
 
     ℒ = 0
-    total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt = 0 , 0, 0, 0, 0
+    total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt = 0, 0, 0, 0, 0
     src_disparity_syn = nothing
     for (scale, (mpi_rgb, mpi_sigma)) in zip(scales, mpi)
-        src_img_scaled = upsample_bilinear(src_img, scale)
-        tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
-        src_depth_scaled = upsample_bilinear(src_depth, scale)
-        src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth = loss_per_scale(
-            src_img_scaled,
-            src_depth_scaled,
-            tgt_img_scaled,
-            scale,
-            K,
-            mpi_rgb,
-            mpi_sigma,
-            disparities,
-            pose)
-        ℒ += sum((0.15*loss_rgb_tgt, 0.85*loss_ssim_tgt, 0.5*loss_depth))
-        ignore_derivatives() do 
-            @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth)))
+        NVTX.@range "scale: $(scale)" begin
+            src_img_scaled = upsample_bilinear(src_img, scale)
+            tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
+            src_depth_scaled = upsample_bilinear(src_depth, scale)
+            src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth = loss_per_scale(
+                src_img_scaled,
+                src_depth_scaled,
+                tgt_img_scaled,
+                scale,
+                K,
+                mpi_rgb,
+                mpi_sigma,
+                disparities,
+                pose)
+            ℒ += (
+                1e-1 * loss_rgb_tgt, # rgb_tgt_syn <-> rgb_tgt
+                1e-1 * loss_ssim_tgt, # rgb_tgt_syn <-> rgb_tgt
+                1e-4 * loss_smooth_src, # disparity_src_syn <-> rgb_src
+                # 5e-4 * loss_smooth_tgt, # disparity_tgt_syn <-> rgb_tgt
+                loss_depth, # disparity_src_syn <-> disparity_src
+            ) |> sum
+            # ℒ += loss_depth + loss_rgb_tgt + 1e-2 * loss_smooth_src + loss_ssim_tgt + loss_rgb_tgt
+            ignore_derivatives() do
+                @infiltrate loss_depth > 10
+                @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth)))
+            end
+            total_loss_depth += loss_depth
+            total_loss_rgb_tgt += loss_rgb_tgt
+            total_loss_ssim_tgt += loss_ssim_tgt
+            total_loss_smooth_tgt += loss_smooth_tgt
+            total_loss_smooth_src += loss_smooth_src
         end
-        total_loss_depth += loss_depth
-        total_loss_rgb_tgt += loss_rgb_tgt
-        total_loss_ssim_tgt += loss_ssim_tgt
-        total_loss_smooth_tgt += loss_smooth_tgt
-        total_loss_smooth_src += loss_smooth_src
-
-
     end
     return ℒ, src_disparity_syn, (total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt)
 end
@@ -189,4 +203,5 @@ d(ŷ, y) = log(ŷ) - log(y)
 function D(ŷ, y)
     ds = d.(ŷ, y)
     mean(ds .^ 2) - mean(ds)^2
+    # mean(ds .^ 2) # gewone MSE
 end

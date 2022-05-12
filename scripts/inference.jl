@@ -3,7 +3,9 @@ using Monodepth: Plots
 
 transfer = x -> gpu(f32(x))
 
-BSON.@load "/scratch/vop_BC04/out/MINE/models/2-500-0.7098354643190987.bson" model_host
+# BSON.@load "/scratch/vop_BC04/out/MINE/models/2-500-0.7098354643190987.bson" model_host
+BSON.@load "/scratch/vop_BC04/out/MINE/models3/2-9500-4.2053725464762355.bson" model_host
+BSON.@load "/scratch/vop_BC04/out/MINE/models8/17-8000-3.391675782670658.bson" model_host
 
 model = gpu(model_host)
 
@@ -40,10 +42,13 @@ Gray.(collect(result[2][:, :, 1, 1])')
 save_disparity(cpu(result[2][:, :, 1, 1]))
 W, H, _, N, B = size(rgb)
 
-K = K ./ eltype(K)(2^1)
-CUDA.@allowscalar K[3, 3] = 1
+# K = K ./ eltype(K)(2^1)
+# CUDA.@allowscalar K[3, 3] = 1
 
-K_inv = inv(K)
+# K_inv = inv(K)
+
+K = train_cache.K
+invK = train_cache.invK
 
 meshgrid = Monodepth.create_meshgrid(H, W) |> transfer
 xyz_src = Monodepth.get_src_xyz_from_plane_disparity(meshgrid, disparities, K_inv)
@@ -56,28 +61,25 @@ dataset
 
 dchain = DChain([datasets[end-1]])
 
-datasets[2]
-
-[d.frames_dir for d in datasets]
-
-datasets[39]
+datasets[end-1]
 
 for (i, x_host) in enumerate(DataLoader(dchain, 1))
+    if (i>10); break; end
     src_img, src_depth, tgt_img, pose = transfer.(x_host)
 
     println("Forward:")
-    loss, disparity = train_loss(model, src_img, src_depth, tgt_img,
-        pose, K, invK, scales, N=16)
+    
+    NVTX.@range "train_loss" begin
+        loss, disparity = train_loss(model, src_img, src_depth, tgt_img,
+            pose, K, invK, scales, N=16)
+    end
 
     disparity = collect(disparity[:, :, 1, 1])
 
     disparity = permutedims(disparity, (2, 1))[end:-1:1, :]
+    # Gray.(disparity')|>display
     fig = Plots.heatmap(
         disparity; aspect_ratio=:equal, xticks=nothing, yticks=nothing, colorbar=:none, legend=:none, grid=false, showaxis=false, padding = (0.0, 0.0))
-    Plots.savefig(fig, "/scratch/vop_BC04/out/MINE/result/$i.png")
+    # Plots.savefig(fig, "/scratch/vop_BC04/out/MINE/result7/$i.png")
     display(fig)
 end
-
-disparity = rand(10, 10)
-using Monodepth:Plots
-Plots.heatmap(disparity, xticks=nothing, yticks=nothing, colorbar=:none, legend=:none, grid=false, showaxis=false, Plots.padding = (0.0, 0.0))

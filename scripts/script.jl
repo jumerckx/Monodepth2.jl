@@ -12,14 +12,14 @@ using CUDA
 using Flux
 using Monodepth.ResNet
 
-function train(; η=1e-4, model=nothing, θ=nothing)
+function train(; η=1e-4, model=nothing, θ=nothing, datasets=nothing)
     device = gpu
     precision = f32
     transfer = device ∘ precision
     @show transfer
 
-    log_dir = "/scratch/vop_BC04/out/MINE/logs2"
-    save_dir = "/scratch/vop_BC04/out/MINE/models2"
+    log_dir = "/scratch/vop_BC04/out/MINE/logs8"
+    save_dir = "/scratch/vop_BC04/out/MINE/models8"
 
     isdir(log_dir) || mkpath(log_dir)
     isdir(save_dir) || mkpath(save_dir)
@@ -33,19 +33,22 @@ function train(; η=1e-4, model=nothing, θ=nothing)
     # target_size = (64, 64)
 
 
-    img_dir = "/scratch/vop_BC04/KITTI/"
-    depth_dir = "/scratch/vop_BC04/depth_maps/"
+    
+    if isnothing(datasets)
+        img_dir = "/scratch/vop_BC04/KITTI/"
+        depth_dir = "/scratch/vop_BC04/depth_maps/"
 
-    datasets = []
-    for datum in filter(isdir, joinpath.(img_dir, readdir(img_dir)))
-        datum_path = joinpath(img_dir, datum)
-        calib_path = joinpath(datum_path, "calib_cam_to_cam.txt")
-        for drive in readdir(datum_path)[isdir.(joinpath.(datum_path, readdir(datum_path)))] # filter(isdir, joinpath.(datum_path,  readdir(datum_path)))
-            drive_depth_path = joinpath(depth_dir, drive, "proj_depth", "groundtruth")
-            if (isdir(drive_depth_path))
-                drive = joinpath(datum_path, drive)
-                poses_path = joinpath(drive, "poses.txt")
-                push!(datasets, KittyDataset(drive, drive_depth_path, calib_path, poses_path; target_size, augmentations))
+        datasets = []
+        for datum in filter(isdir, joinpath.(img_dir, readdir(img_dir)))
+            datum_path = joinpath(img_dir, datum)
+            calib_path = joinpath(datum_path, "calib_cam_to_cam.txt")
+            for drive in readdir(datum_path)[isdir.(joinpath.(datum_path, readdir(datum_path)))] # filter(isdir, joinpath.(datum_path,  readdir(datum_path)))
+                drive_depth_path = joinpath(depth_dir, drive, "proj_depth", "groundtruth")
+                if (isdir(drive_depth_path))
+                    drive = joinpath(datum_path, drive)
+                    poses_path = joinpath(drive, "poses.txt")
+                    push!(datasets, KittyDataset(drive, drive_depth_path, calib_path, poses_path; target_size, augmentations))
+                end
             end
         end
     end
@@ -106,7 +109,7 @@ function train(; η=1e-4, model=nothing, θ=nothing)
     GC.gc()
 
     # Do regular training.
-    n_epochs, log_iter, save_iter = 20, 50, 500
+    n_epochs, log_iter, save_iter = 20, 50, 1000
 
     println("Training...")
     for epoch in 1:n_epochs
@@ -142,8 +145,8 @@ function train(; η=1e-4, model=nothing, θ=nothing)
 
             if do_visualization
                 temp = cpu(disparity[:, :, 1, 1])
-                save_disparity(temp)
-                colorview(RGB, permutedims(collect(src_img[:, :, :, 1]), (3, 2, 1))) |> display
+                # save_disparity(temp)
+                # colorview(RGB, permutedims(collect(src_img[:, :, :, 1]), (3, 2, 1))) |> display
 
                 save_disparity(
                     temp,
@@ -159,7 +162,9 @@ function train(; η=1e-4, model=nothing, θ=nothing)
     end
 end
 CUDA.allowscalar(false)
-train()
+train(datasets=datasets[1:48])
+
+# testset is datasets[128:129]
 
 device = gpu
 precision = f32

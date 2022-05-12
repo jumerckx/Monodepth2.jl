@@ -43,7 +43,7 @@ function DepthDecoder(;encoder_channels, scale_levels, embedding_levels=21)
         # TODO: set correct number of output channels (color+density) 
         # TODO: sigmoid activation for output?
 
-        push!(decoders, DecoderBlock(Conv((3, 3), decoder_channels[slevel]=>4, σ)))
+        push!(decoders, DecoderBlock(Conv((3, 3), decoder_channels[slevel]=>4))) # Identity activation, later gebeurt nog σ.(rgb) en abs.(sigma)
         bstart = slevel + 1
     end
     DepthDecoder(branches, decoders)

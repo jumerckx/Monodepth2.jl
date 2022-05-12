@@ -25,35 +25,30 @@ function (m::Model)(x, disparity; num_bins=32)
     W, H, C, B = size(x)
     # x_flattened = reshape(x, (W, H, C, B))
 
-
-    features = m.encoder(x, Val(:stages))
-
-    embedded_disparity = embed(disparity)
-    depth_decoder_x = map(features) do f
-        f = cat(
-            repeat(Flux.unsqueeze(f, 4), 1, 1, 1, num_bins, 1),
-            repeat(embedded_disparity, size(f, 1), size(f, 2)),
-            dims=3)
-        reshape(f, size(f, 1), size(f, 2), size(f, 3), size(f, 4)*size(f, 5))
-
-    # depth_decoder_x = map(features) do f
-    #     f = cat(
-    #         repeat(f[:, :, :, target_id:target_id, :], 1, 1, 1, num_bins, 1),
-    #         repeat(embedded_disparity, size(f, 1), size(f, 2)),
-    #         dims=3
-    #     ) # H×W×(channels+embedding)×planes×batch_size
-
-        # merge plane- and batch-dimension together:
+    NVTX.@range "Encoder" begin
+        features = m.encoder(x, Val(:stages))
     end
 
+    NVTX.@range "DepthDecoder" begin
+        embedded_disparity = embed(disparity)
+        depth_decoder_x = map(features) do f
+            f = cat(
+                repeat(Flux.unsqueeze(f, 4), 1, 1, 1, num_bins, 1),
+                repeat(embedded_disparity, size(f, 1), size(f, 2)),
+                dims=3)
+            reshape(f, size(f, 1), size(f, 2), size(f, 3), size(f, 4)*size(f, 5))
+        end
     
-    disparities = m.depth_decoder(depth_decoder_x)
-    disparities = map(disparities) do d
-        W,H,_,_ = size(d)
-        d = reshape(d, (W, H, 4, num_bins, B))
-        disparities_rgb = d[:,:,1:3,:, :]
-        disparities_sigma = d[:, :, 4:4, :, :]
-        (disparities_rgb, disparities_sigma)
+
+    
+        disparities = m.depth_decoder(depth_decoder_x)
+        disparities = map(disparities) do d
+            W,H,_,_ = size(d)
+            d = reshape(d, (W, H, 4, num_bins, B))
+            disparities_rgb = sigmoid.(d[:,:,1:3,:, :])
+            disparities_sigma = relu.(d[:, :, 4:4, :, :]) .+ eltype(d)(1e-4) # zie depth_decoder.py:139, +1e-4 is nodig om 0'en in sigma te vermijden (anders NaN-loss)
+            (disparities_rgb, disparities_sigma)
+        end
     end
     
     # poses = eval_poses(m, features[end], source_ids, target_id)
