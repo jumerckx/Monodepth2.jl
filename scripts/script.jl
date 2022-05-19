@@ -18,8 +18,8 @@ function train(; η=1e-4, model=nothing, θ=nothing, datasets=nothing)
     transfer = device ∘ precision
     @show transfer
 
-    log_dir = "/scratch/vop_BC04/out/MINE/logs8"
-    save_dir = "/scratch/vop_BC04/out/MINE/models8"
+    log_dir = "/scratch/vop_BC04/out/MINE/logs9"
+    save_dir = "/scratch/vop_BC04/out/MINE/models9"
 
     isdir(log_dir) || mkpath(log_dir)
     isdir(save_dir) || mkpath(save_dir)

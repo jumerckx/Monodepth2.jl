@@ -18,65 +18,6 @@ end
     minimum(cat(mask, warp_loss; dims=3); dims=3)
 end
 
-# function train_loss(
-#     model, x::AbstractArray{T}, auto_loss, cache::TrainCache, parameters::Params,
-#     do_visualization,
-# ) where T
-#     target_x = x[:, :, :, cache.target_id, :]
-#     disparities, poses = model(x, cache.source_ids, cache.target_id)
-
-#     # TODO pass as parameter to function
-#     inverse_transform = cache.source_ids .< cache.target_id
-#     Ps = map(
-#         p -> composeT(p[1].rvec, p[1].tvec, p[2]),
-#         zip(poses, inverse_transform))
-
-#     vis_warped, vis_loss, vis_disparity = nothing, nothing, nothing
-#     if do_visualization
-#         vis_disparity = cpu(disparities[end])
-#     end
-
-#     loss = zero(T)
-#     width, height = parameters.target_size
-
-#     for (i, (disparity, scale)) in enumerate(zip(disparities, cache.scales))
-#         dw, dh, _, dn = size(disparity)
-#         if dw != width || dh != height
-#             disparity = upsample_bilinear(disparity; size=(width, height))
-#         end
-
-#         depth = disparity_to_depth(
-#             disparity, parameters.min_depth, parameters.max_depth)
-#         coordinates = cache.backprojections(
-#             reshape(depth, (1, width * height, dn)), cache.invK)
-#         warped_images = map(zip(Ps, cache.source_ids)) do t
-#             uvs = reshape(
-#                 cache.projections(coordinates, cache.K, t[1]...),
-#                 (2, width, height, dn))
-#             grid_sample(x[:, :, :, t[2], :], uvs; padding_mode=:border)
-#         end
-
-#         warp_loss = prediction_loss(cache.ssim, warped_images, target_x)
-#         if parameters.automasking
-#             warp_loss = _apply_mask(auto_loss, warp_loss)
-#         end
-
-#         normalized_disparity = (
-#             disparity ./ (mean(disparity; dims=(1, 2)) .+ T(1e-7)))[:, :, 1, :]
-#         disparity_loss = smooth_loss(normalized_disparity, target_x) .*
-#             T(parameters.disparity_smoothness) .* T(scale)
-
-#         loss += mean(warp_loss) + disparity_loss
-
-#         if do_visualization && i == length(cache.scales)
-#             vis_warped = cpu.(warped_images)
-#             vis_loss = cpu(warp_loss)
-#         end
-#     end
-
-#     loss / T(length(cache.scales)), vis_disparity, vis_warped, vis_loss
-# end
-
 function network_forward(model, rgb; N=32, K_inv)
     W, H, _, B = size(rgb)
 
@@ -117,6 +58,23 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
     src_disparity_syn = 1 ./ src_depth_syn
 
     # TODO: scale_factor?
+    # mask = .!iszero.(src_depth)
+    # src_pt3d_disp = CUDA.zeros(3, W, H, B)
+    # src_pt3d_disp[1, :, :, :] .= 1:W
+    # src_pt3d_disp[2, :, :, :] .= (1:H)'
+    # src_pt3d_disp[3, :, :, :] .= src_depth[:, :, 1, :]
+    # src_pt3d_disp = reshape(src_pt3d_disp, (3, :))
+    # src_pt3d_disp = reshape(K * src_pt3d_disp, (3, W, H, B))
+    # src_pt3d_disp = src_pt3d_disp[1:2, :, :, :] ./ src_pt3d_disp[3:3, :, :, :]
+    
+    # poging:
+    mask, ds = ignore_derivatives() do
+        mask = src_depth .!= 0
+        ds = d.(src_depth_syn[mask], src_depth[mask])
+        s = mean(ds)
+        pose.tvec ./= eltype(pose.tvec)(s)
+        mask, ds
+    end
 
     # render_novel_view:
     tgt_imgs_syn, tgt_disparity_syn, tgt_mask_syn = render_novel_view(
@@ -137,6 +95,7 @@ function loss_per_scale(src_img, src_depth, tgt_img, scale, K, mpi_rgb, mpi_sigm
     loss_depth = D(src_depth_syn[mask], src_depth[mask])
     # loss_depth = 0
     ignore_derivatives() do
+        @infiltrate
         @infiltrate loss_smooth_tgt > 100
         @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth))) || any(isnan.(src_disparity_syn))
     end
@@ -151,49 +110,45 @@ function train_loss(
     minimal_depth = max(near, -minimum(pose.tvec[3, :]) + 0.1) # eerste plane mag vanaf 10cm van de camera liggen.
     disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(N, B; near=eltype(src_img)(1 / minimal_depth), far=eltype(src_img)(far))
     # disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(N, B; near=eltype(src_img)(near), far=eltype(src_img)(far))
-    NVTX.@range "model" begin
-        mpi = model(
-            src_img,
-            disparities;
-            num_bins=N)
-    end
+    mpi = model(
+        src_img,
+        disparities;
+        num_bins=N)
 
     ℒ = 0
     total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt = 0, 0, 0, 0, 0
     src_disparity_syn = nothing
     for (scale, (mpi_rgb, mpi_sigma)) in zip(scales, mpi)
-        NVTX.@range "scale: $(scale)" begin
-            src_img_scaled = upsample_bilinear(src_img, scale)
-            tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
-            src_depth_scaled = upsample_bilinear(src_depth, scale)
-            src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth = loss_per_scale(
-                src_img_scaled,
-                src_depth_scaled,
-                tgt_img_scaled,
-                scale,
-                K,
-                mpi_rgb,
-                mpi_sigma,
-                disparities,
-                pose)
-            ℒ += (
-                1e-1 * loss_rgb_tgt, # rgb_tgt_syn <-> rgb_tgt
-                1e-1 * loss_ssim_tgt, # rgb_tgt_syn <-> rgb_tgt
-                1e-4 * loss_smooth_src, # disparity_src_syn <-> rgb_src
-                # 5e-4 * loss_smooth_tgt, # disparity_tgt_syn <-> rgb_tgt
-                loss_depth, # disparity_src_syn <-> disparity_src
-            ) |> sum
-            # ℒ += loss_depth + loss_rgb_tgt + 1e-2 * loss_smooth_src + loss_ssim_tgt + loss_rgb_tgt
-            ignore_derivatives() do
-                @infiltrate loss_depth > 10
-                @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth)))
-            end
-            total_loss_depth += loss_depth
-            total_loss_rgb_tgt += loss_rgb_tgt
-            total_loss_ssim_tgt += loss_ssim_tgt
-            total_loss_smooth_tgt += loss_smooth_tgt
-            total_loss_smooth_src += loss_smooth_src
+        src_img_scaled = upsample_bilinear(src_img, scale)
+        tgt_img_scaled = upsample_bilinear(tgt_img, scale) # TODO: misschien sneller om src_- en tgt_image tegelijk te downsamplen?
+        src_depth_scaled = upsample_bilinear(src_depth, scale)
+        src_disparity_syn, loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth = loss_per_scale(
+            src_img_scaled,
+            src_depth_scaled,
+            tgt_img_scaled,
+            scale,
+            K,
+            mpi_rgb,
+            mpi_sigma,
+            disparities,
+            pose)
+        ℒ += (
+            1e-2 * loss_rgb_tgt, # rgb_tgt_syn <-> rgb_tgt
+            1e-1 * loss_ssim_tgt, # rgb_tgt_syn <-> rgb_tgt
+            # 1e-4 * loss_smooth_src, # disparity_src_syn <-> rgb_src
+            # 5e-4 * loss_smooth_tgt, # disparity_tgt_syn <-> rgb_tgt
+            loss_depth, # disparity_src_syn <-> disparity_src
+        ) |> sum
+        # ℒ += loss_depth + loss_rgb_tgt + 1e-2 * loss_smooth_src + loss_ssim_tgt + loss_rgb_tgt
+        ignore_derivatives() do
+            @infiltrate loss_depth > 10
+            @infiltrate isnan(sum((loss_rgb_tgt, loss_ssim_tgt, loss_smooth_src, loss_smooth_tgt, loss_depth)))
         end
+        total_loss_depth += loss_depth
+        total_loss_rgb_tgt += loss_rgb_tgt
+        total_loss_ssim_tgt += loss_ssim_tgt
+        total_loss_smooth_tgt += loss_smooth_tgt
+        total_loss_smooth_src += loss_smooth_src
     end
     return ℒ, src_disparity_syn, (total_loss_rgb_tgt, total_loss_ssim_tgt, total_loss_smooth_src, total_loss_depth, total_loss_smooth_tgt)
 end
@@ -202,6 +157,11 @@ d(ŷ, y) = log(ŷ) - log(y)
 
 function D(ŷ, y)
     ds = d.(ŷ, y)
-    mean(ds .^ 2) - mean(ds)^2
+    D(ds)
+    # mean(ds .^ 2) - mean(ds)^2
     # mean(ds .^ 2) # gewone MSE
+end
+
+function D(ds)
+    mean(ds .^ 2) - mean(ds)^2
 end

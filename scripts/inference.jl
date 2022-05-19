@@ -1,85 +1,76 @@
-using BSON, Images, Monodepth, Flux, CUDA
+using BSON, Images, Monodepth, Flux, CUDA, ColorSchemes
 using Monodepth: Plots
 
 transfer = x -> gpu(f32(x))
 
 # BSON.@load "/scratch/vop_BC04/out/MINE/models/2-500-0.7098354643190987.bson" model_host
-BSON.@load "/scratch/vop_BC04/out/MINE/models3/2-9500-4.2053725464762355.bson" model_host
+BSON.@load "/scratch/vop_BC04/out/MINE/models9/3-5000-3.120057814196662.bson" model_host
 BSON.@load "/scratch/vop_BC04/out/MINE/models8/17-8000-3.391675782670658.bson" model_host
 
 model = gpu(model_host)
 
-src_img = load("/scratch/vop_BC04/KITTI/2011_09_28/2011_09_28_drive_0001_sync/image_02/data/0000000061.png")
-src_depth = load("/scratch/vop_BC04/depth_maps/2011_09_28_drive_0001_sync/proj_depth/groundtruth/image_02/0000000061.png")
-
-src_img = imresize(src_img, (128,416))
-src_depth = imresize(src_depth, (128,416))
-
-src_img = Flux.unsqueeze(gpu(Float32.(permutedims(channelview(src_img), (3, 2, 1)))), 4)
-src_depth = gpu(Float32.(permutedims(channelview(src_depth), (2, 1))))[:, :, 1:1, 1:1]
-
-K = gpu([ 243.98    0.0   208.0
-    0.0   243.98   64.0
-    0.0     0.0     1.0])
-invK = inv(K)
-
-disparities = Monodepth.uniformly_sample_disparity_from_linspace_bins(8, 1; near=eltype(src_img)(1), far=eltype(src_img)(00.001))
-mpi = model(
-    src_img,
-    disparities;
-    num_bins=8)
-
-rgb, sigma = mpi[end]
-
-# Monodepth.render_tgt_rgb_depth(rgb, sigma, disparities, xyz_tgt, pose, K_inv, K)
-
-pose = Monodepth.Pose(gpu(zeros(3, 1)), gpu(zeros(3, 1)))
-
-result = Monodepth.render_novel_view(rgb, sigma, disparities, pose, invK, K; scale=0)
-
-Gray.(collect(result[2][:, :, 1, 1])')
-
-save_disparity(cpu(result[2][:, :, 1, 1]))
-W, H, _, N, B = size(rgb)
-
-# K = K ./ eltype(K)(2^1)
-# CUDA.@allowscalar K[3, 3] = 1
-
-# K_inv = inv(K)
-
 K = train_cache.K
 invK = train_cache.invK
 
-meshgrid = Monodepth.create_meshgrid(H, W) |> transfer
-xyz_src = Monodepth.get_src_xyz_from_plane_disparity(meshgrid, disparities, K_inv)
+function color_me(A, clr_map)
+    n = length(clr_map)
+    f(s) = clr_map[clamp(round(Int, (n-1)*s)+1, 1, n)]
+    Am = map(f, A)
+    return Am
+end
 
-src_img_syn, src_depth_syn, blend_weights, weights = Monodepth.plane_volume_rendering(rgb, sigma, xyz_src)
+function color_me_scaleminmax(A, cmap)
+    n = length(cmap)
+    scale = takemap(scaleminmax, A)
+    f = s->cmap[clamp(round(Int, (n-1)*scale(s))+1, 1, n)]  # safely convert 0-1 to 1:n
+    map(f, A)       # like f.(A) but does not allocate significant memory
+end
 
-save_disparity(collect(1 ./ src_depth_syn[:, :, 1, 1]), "/scratch/vop_BC04/out/MINE/img61_depth.png")
+dchain = DChain([datasets[2]])
 
-dataset
+disparity = nothing
+src_img = nothing
 
-dchain = DChain([datasets[end-1]])
-
-datasets[end-1]
-
+imgs = []
+losses = []
+test = []
 for (i, x_host) in enumerate(DataLoader(dchain, 1))
     if (i>10); break; end
     src_img, src_depth, tgt_img, pose = transfer.(x_host)
 
     println("Forward:")
     
-    NVTX.@range "train_loss" begin
-        loss, disparity = train_loss(model, src_img, src_depth, tgt_img,
-            pose, K, invK, scales, N=16)
-    end
+    loss, disparity, huh = train_loss(model, src_img, src_depth, tgt_img,
+        pose, K, invK, scales, N=8)
+    push!(losses, huh)
+    push!(test, disparity)
 
     disparity = collect(disparity[:, :, 1, 1])
 
-    disparity = permutedims(disparity, (2, 1))[end:-1:1, :]
+
+    src_img = convert.(RGB{N0f8}, colorview(RGB, permutedims(collect(src_img[:, :, :, 1]), (3, 2, 1))))
+
+    disparity = permutedims(disparity, (2, 1))
+    disparity = color_me_scaleminmax(disparity, ColorSchemes.thermal)
+    disparity = convert.(RGB{N0f8}, disparity)
+    push!(imgs, vcat(src_img, disparity))
+    # save("/scratch/vop_BC04/out/MINE/result_poster/$(i).png", src_img)
     # Gray.(disparity')|>display
-    fig = Plots.heatmap(
-        disparity; aspect_ratio=:equal, xticks=nothing, yticks=nothing, colorbar=:none, legend=:none, grid=false, showaxis=false, padding = (0.0, 0.0))
-    # Plots.savefig(fig, "/scratch/vop_BC04/out/MINE/result7/$i.png")
-    display(fig)
+    # fig = Plots.heatmap(
+        #     disparity; aspect_ratio=:equal, xticks=nothing, yticks=nothing, colorbar=:none, legend=:none, grid=false, showaxis=false, padding = (0.0, 0.0))
+        # Plots.savefig(fig, "/scratch/vop_BC04/out/MINE/result7/$i.png")
+        # display(fig)
 end
+    
+
+display.(imgs)
+
+save("/scratch/vop_BC04/out/MINE/poster9.png", imgs[97])
+
+VideoIO.save("/scratch/vop_BC04/out/MINE/video4.mp4", imgs, framerate=10, encoder_options=(crf=23, preset="medium"))
+
+save("/scratch/vop_BC04/out/MINE/N2.png", imgs[10])
+
+save("/scratch/vop_BC04/out/MINE/N32_disp.png", disparity)
+
+ColorSchemes.thermal
