@@ -25,7 +25,7 @@ typedef struct _CustomData {
   GstElement *compositor;
   GstPad *compositor_sink_0;
   GstPad *compositor_sink_1;
-  gboolean *current_video;
+  gboolean current_video;
   GstElement *videosink;
 } CustomData;
 
@@ -129,7 +129,9 @@ int main(int argc, char *argv[]) {
   g_object_set (data.compositor, "background", 3, NULL);
   data.compositor_sink_0 =  gst_element_get_static_pad (data.compositor, "sink_0");
   data.compositor_sink_1 =  gst_element_get_static_pad (data.compositor, "sink_1");
-  
+  g_object_set (data.compositor_sink_0, "alpha", 1.0, NULL);
+  g_object_set (data.compositor_sink_1, "alpha", 0.0, NULL);
+  data.current_video = FALSE;
 
   /* Connect to the pad-added signal for demux*/
   g_signal_connect (data.demux_1, "pad-added", G_CALLBACK (pad_added_handler), &data);
@@ -286,6 +288,19 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, CustomData *dat
 }
 
 static void crossfade(CustomData *data){
-  g_object_set (data->compositor_sink_0, "alpha", 0.5, NULL);
-  g_object_set (data->compositor_sink_1, "alpha", 0.5, NULL);
+  if(data->current_video == TRUE){
+    for(gdouble i = 0.0; i <= 1.0 ; i = i + 0.000002){
+      g_object_set (data->compositor_sink_0, "alpha", i, NULL);
+      g_object_set (data->compositor_sink_1, "alpha", 1-i, NULL);
+      
+    }
+    data->current_video = FALSE;
+  } 
+  else {
+    for(gdouble i = 0.0; i <= 1.0 ; i = i + 0.000002){
+      g_object_set (data->compositor_sink_0, "alpha", 1-i, NULL);
+      g_object_set (data->compositor_sink_1, "alpha", i, NULL);
+    }
+    data->current_video = TRUE;
+  }
 }
