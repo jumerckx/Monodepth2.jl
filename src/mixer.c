@@ -20,11 +20,11 @@ typedef struct _CustomData {
   GstElement *audio_decodebin_2;
   GstElement *videoconvert_1;
   GstElement *videoconvert_2;
-  GstElement *videosink_1;
-  GstElement *videosink_2;
   GstElement *alpha_1;
   GstElement *alpha_2;
-  GstElement *composer;
+  GstElement *compositor;
+  GstElement *videosink;
+  gboolean *current_video;
 } CustomData;
 
 static gboolean handle_message(GstBus *bus, GstMessage *msg, CustomData *data);
@@ -48,7 +48,6 @@ int main(int argc, char *argv[]) {
   data.video_decodebin_1 = gst_element_factory_make("decodebin", "video_decodebin_1");
   data.videoconvert_1 = gst_element_factory_make("videoconvert", "videoconvert_1");
   data.alpha_1 = gst_element_factory_make("alpha", "alpha_1");
-  data.videosink_1 = gst_element_factory_make("glimagesink", "videosink_1");
 
   /*source_2 up to composer*/
   data.source_2 = gst_element_factory_make("filesrc", "source_2");
@@ -56,23 +55,31 @@ int main(int argc, char *argv[]) {
   data.video_decodebin_2 = gst_element_factory_make("decodebin", "video_decodebin_2");
   data.videoconvert_2 = gst_element_factory_make("videoconvert", "videoconvert_2");
   data.alpha_2 = gst_element_factory_make("alpha", "alpha_2");
-  data.videosink_2 = gst_element_factory_make("glimagesink", "videosink_2");
 
   /*composer up to videosink*/
-  data.composer = gst_element_factory_make("composer", "composer");
+  data.compositor = gst_element_factory_make("compositor", "compositor");
+  data.videosink = gst_element_factory_make("glimagesink", "videosink");
 
+  /*pipeline*/
   data.pipeline = gst_pipeline_new("test-pipeline");
 
-  if (!data.pipeline || !data.source_1 || !data.demux_1 || !data.video_decodebin_1 || !data.videoconvert_1 || !data.alpha_1 || !data.videosink_1
-    || !data.source_2 || !data.demux_2 || !data.video_decodebin_2 || !data.videoconvert_2 || !data.alpha_2 || !data.videosink_2) {
+  /*check if all elements created*/
+  if (!data.pipeline || !data.source_1 || !data.demux_1 || !data.video_decodebin_1 || !data.videoconvert_1 || !data.alpha_1 || 
+  !data.source_2 || !data.demux_2 || !data.video_decodebin_2 || !data.videoconvert_2 || !data.alpha_2 ||
+  !data.compositor || !data.videosink) {
     g_printerr("!!! Not all elements could be created.\n");
     return -1;
   }
 
-  /*bin for pipeline*/
-  gst_bin_add_many(GST_BIN(data.pipeline), data.source_1, data.demux_1, data.video_decodebin_1, data.videoconvert_1, data.alpha_1, data.videosink_1,
-  data.source_2, data.demux_2, data.video_decodebin_2, data.videoconvert_2, data.alpha_2, data.videosink_2,
-                             NULL);
+  /*add all elemets to bin (so they can be linked)*/
+  gst_bin_add_many(GST_BIN(data.pipeline), data.source_1, data.demux_1, data.video_decodebin_1, data.videoconvert_1, data.alpha_1,
+  data.source_2, data.demux_2, data.video_decodebin_2, data.videoconvert_2, data.alpha_2,
+  data.compositor, data.videosink,
+  NULL);
+
+  /*debugging
+  putenv("GST_DEBUG_DUMP_DOT_DIR=../debug/");
+  gst_debug_bin_to_dot_file(GST_BIN(data.pipeline), 8, "debug.dot");*/
   
   /*link source_1 and demux_1*/
   if (!gst_element_link_many(data.source_1, data.demux_1,
@@ -90,18 +97,26 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  /*link videoconvert_1 and videosink_1*/
-  if (!gst_element_link_many(data.videoconvert_1, data.alpha_1, data.videosink_1,
+  /*link videoconvert_1 and alpha_1 and composer*/
+  if (!gst_element_link_many(data.videoconvert_1, data.alpha_1, data.compositor,
                              NULL)) {
-    g_printerr("Linking error: Unable to statically link videoconvert_1 to alpha_1 to videosink_1).\n");
+    g_printerr("Linking error: Unable to statically link videoconvert_1 to alpha_1 to composer).\n");
     gst_object_unref(data.pipeline);
     return -1;
   }
 
-  /*link videoconvert_2 and videosink_2*/
-  if (!gst_element_link_many(data.videoconvert_2, data.alpha_2, data.videosink_2,
+  /*link videoconvert_2 and alpha_2 and composer*/
+  if (!gst_element_link_many(data.videoconvert_2, data.alpha_2, data.compositor,
                              NULL)) {
-    g_printerr("Linking error: Unable to statically link videoconvert_2 to alpha_2 to videosink_2).\n");
+    g_printerr("Linking error: Unable to statically link videoconvert_2 to alpha_2 to composer).\n");
+    gst_object_unref(data.pipeline);
+    return -1;
+  }
+
+  /*link composer and videosink*/
+  if (!gst_element_link_many(data.compositor, data.videosink,
+                             NULL)) {
+    g_printerr("Linking error: Unable to statically link composer to videosink).\n");
     gst_object_unref(data.pipeline);
     return -1;
   }
@@ -109,6 +124,10 @@ int main(int argc, char *argv[]) {
   /*set source locations*/
   g_object_set (data.source_1, "location", "../data/Spring.mp4", NULL);
   g_object_set (data.source_2, "location", "../data/Sprite.mp4", NULL);
+
+  /*set initial background and alpha values for compositor*/
+  g_object_set (data.compositor, "background", 3, NULL);
+
 
   /* Connect to the pad-added signal for demux*/
   g_signal_connect (data.demux_1, "pad-added", G_CALLBACK (pad_added_handler), &data);
@@ -261,4 +280,8 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, CustomData *dat
   /* Unreference the sink pad */
   if (sink_pad != NULL)
     gst_object_unref (sink_pad);
+}
+
+static void crossfade(CustomData *data){
+
 }
