@@ -23,14 +23,18 @@ typedef struct _CustomData {
   GstElement *alpha_1;
   GstElement *alpha_2;
   GstElement *compositor;
-  GstElement *videosink;
+  GstPad *compositor_sink_0;
+  GstPad *compositor_sink_1;
   gboolean *current_video;
+  GstElement *videosink;
 } CustomData;
 
 static gboolean handle_message(GstBus *bus, GstMessage *msg, CustomData *data);
 static gboolean handle_keyboard(GIOChannel *source, GIOCondition cond,
                                 CustomData *data);
 
+/*declarations*/
+static void crossfade(CustomData *data);
 static void pad_added_handler (GstElement *src, GstPad *pad, CustomData *data);
 
 int main(int argc, char *argv[]) {
@@ -76,10 +80,6 @@ int main(int argc, char *argv[]) {
   data.source_2, data.demux_2, data.video_decodebin_2, data.videoconvert_2, data.alpha_2,
   data.compositor, data.videosink,
   NULL);
-
-  /*debugging
-  putenv("GST_DEBUG_DUMP_DOT_DIR=../debug/");
-  gst_debug_bin_to_dot_file(GST_BIN(data.pipeline), 8, "debug.dot");*/
   
   /*link source_1 and demux_1*/
   if (!gst_element_link_many(data.source_1, data.demux_1,
@@ -125,9 +125,11 @@ int main(int argc, char *argv[]) {
   g_object_set (data.source_1, "location", "../data/Spring.mp4", NULL);
   g_object_set (data.source_2, "location", "../data/Sprite.mp4", NULL);
 
-  /*set initial background and alpha values for compositor*/
+  /*set initial background and alpha values for compositor, and register pads*/
   g_object_set (data.compositor, "background", 3, NULL);
-
+  data.compositor_sink_0 =  gst_element_get_static_pad (data.compositor, "sink_0");
+  data.compositor_sink_1 =  gst_element_get_static_pad (data.compositor, "sink_1");
+  
 
   /* Connect to the pad-added signal for demux*/
   g_signal_connect (data.demux_1, "pad-added", G_CALLBACK (pad_added_handler), &data);
@@ -211,6 +213,7 @@ static gboolean handle_keyboard(GIOChannel *source, GIOCondition cond,
     if (g_str_has_prefix(str, "crossfade")) {
       g_print("INPUT: CROSSFADE.\n");
       // call crossfade
+      crossfade(data);
     } else if (g_str_has_prefix(str, "logo")) {
       g_print("INPUT: LOGO.\n");
       // call toggle_logo
@@ -239,7 +242,7 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, CustomData *dat
   g_print ("Received new pad '%s' from '%s':\n", GST_PAD_NAME (new_pad), GST_ELEMENT_NAME (src));
 
   /* Check the new pad's type */
-  source_name = GST_PAD_NAME (src);
+  source_name = GST_ELEMENT_NAME (src);
   new_pad_name = GST_PAD_NAME (new_pad);
   new_pad_caps = gst_pad_get_current_caps (new_pad);
   new_pad_struct = gst_caps_get_structure (new_pad_caps, 0);
@@ -283,5 +286,6 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, CustomData *dat
 }
 
 static void crossfade(CustomData *data){
-
+  g_object_set (data->compositor_sink_0, "alpha", 0.5, NULL);
+  g_object_set (data->compositor_sink_1, "alpha", 0.5, NULL);
 }
