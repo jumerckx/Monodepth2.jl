@@ -10,14 +10,10 @@ typedef struct _CustomData {
   GstElement *pipeline;
   GstElement *source_1;
   GstElement *source_2;
-  GstElement *demux_1;
-  GstElement *demux_2;
   GstElement *video_queue_1;
   GstElement *video_queue_2;
   GstElement *video_decodebin_1;
   GstElement *video_decodebin_2;
-  GstElement *audio_decodebin_1;
-  GstElement *audio_decodebin_2;
   GstElement *videoconvert_1;
   GstElement *videoconvert_2;
   GstElement *alpha_1;
@@ -48,14 +44,12 @@ int main(int argc, char *argv[]) {
 
   /*source_1 up to composer*/
   data.source_1 = gst_element_factory_make("filesrc", "source_1");
-  data.demux_1 = gst_element_factory_make("qtdemux", "demux_1");
   data.video_decodebin_1 = gst_element_factory_make("decodebin", "video_decodebin_1");
   data.videoconvert_1 = gst_element_factory_make("videoconvert", "videoconvert_1");
   data.alpha_1 = gst_element_factory_make("alpha", "alpha_1");
 
   /*source_2 up to composer*/
   data.source_2 = gst_element_factory_make("filesrc", "source_2");
-  data.demux_2 = gst_element_factory_make("qtdemux", "demux_2");
   data.video_decodebin_2 = gst_element_factory_make("decodebin", "video_decodebin_2");
   data.videoconvert_2 = gst_element_factory_make("videoconvert", "videoconvert_2");
   data.alpha_2 = gst_element_factory_make("alpha", "alpha_2");
@@ -68,52 +62,52 @@ int main(int argc, char *argv[]) {
   data.pipeline = gst_pipeline_new("test-pipeline");
 
   /*check if all elements created*/
-  if (!data.pipeline || !data.source_1 || !data.demux_1 || !data.video_decodebin_1 || !data.videoconvert_1 || !data.alpha_1 || 
-  !data.source_2 || !data.demux_2 || !data.video_decodebin_2 || !data.videoconvert_2 || !data.alpha_2 ||
+  if (!data.pipeline || !data.source_1 || !data.video_decodebin_1 || !data.videoconvert_1 || !data.alpha_1 || 
+  !data.source_2 || !data.video_decodebin_2 || !data.videoconvert_2 || !data.alpha_2 ||
   !data.compositor || !data.videosink) {
     g_printerr("!!! Not all elements could be created.\n");
     return -1;
   }
 
   /*add all elemets to bin (so they can be linked)*/
-  gst_bin_add_many(GST_BIN(data.pipeline), data.source_1, data.demux_1, data.video_decodebin_1, data.videoconvert_1, data.alpha_1,
-  data.source_2, data.demux_2, data.video_decodebin_2, data.videoconvert_2, data.alpha_2,
+  gst_bin_add_many(GST_BIN(data.pipeline), data.source_1, data.video_decodebin_1, data.videoconvert_1, data.alpha_1,
+  data.source_2, data.video_decodebin_2, data.videoconvert_2, data.alpha_2,
   data.compositor, data.videosink,
   NULL);
   
-  /*link source_1 and demux_1*/
-  if (!gst_element_link_many(data.source_1, data.demux_1,
+  /*link source_1 and video_decodebin_1*/
+  if (!gst_element_link_many(data.source_1, data.video_decodebin_1,
                              NULL)) {
-    g_printerr("Linking error: Unable to statically link source_1 to demux_1)\n");
+    g_printerr("Linking error: Unable to statically link source_1 to video_decodebin_1)\n");
     gst_object_unref(data.pipeline);
     return -1;
   }
 
-  /*link source_2 and demux_2*/
-  if (!gst_element_link_many(data.source_2, data.demux_2,
+  /*link source_2 video_decodebin_2*/
+  if (!gst_element_link_many(data.source_2, data.video_decodebin_2,
                              NULL)) {
-    g_printerr("Linking error: Unable to statically link source_2 to demux_2)\n");
+    g_printerr("Linking error: Unable to statically link source_2 to video_decodebin_2)\n");
     gst_object_unref(data.pipeline);
     return -1;
   }
 
-  /*link videoconvert_1 and alpha_1 and composer*/
+  /*link videoconvert_1 and alpha_1 and compositor*/
   if (!gst_element_link_many(data.videoconvert_1, data.alpha_1, data.compositor,
                              NULL)) {
-    g_printerr("Linking error: Unable to statically link videoconvert_1 to alpha_1 to composer).\n");
+    g_printerr("Linking error: Unable to statically link videoconvert_1 to alpha_1 to compositor).\n");
     gst_object_unref(data.pipeline);
     return -1;
   }
 
-  /*link videoconvert_2 and alpha_2 and composer*/
+  /*link videoconvert_2 and alpha_2 and compositor*/
   if (!gst_element_link_many(data.videoconvert_2, data.alpha_2, data.compositor,
                              NULL)) {
-    g_printerr("Linking error: Unable to statically link videoconvert_2 to alpha_2 to composer).\n");
+    g_printerr("Linking error: Unable to statically link videoconvert_2 to alpha_2 to compositor).\n");
     gst_object_unref(data.pipeline);
     return -1;
   }
 
-  /*link composer and videosink*/
+  /*link compositor and videosink*/
   if (!gst_element_link_many(data.compositor, data.videosink,
                              NULL)) {
     g_printerr("Linking error: Unable to statically link composer to videosink).\n");
@@ -134,9 +128,7 @@ int main(int argc, char *argv[]) {
   data.current_video = FALSE;
 
   /* Connect to the pad-added signal for demux*/
-  g_signal_connect (data.demux_1, "pad-added", G_CALLBACK (pad_added_handler), &data);
   g_signal_connect (data.video_decodebin_1, "pad-added", G_CALLBACK (pad_added_handler), &data);
-  g_signal_connect (data.demux_2, "pad-added", G_CALLBACK (pad_added_handler), &data);
   g_signal_connect (data.video_decodebin_2, "pad-added", G_CALLBACK (pad_added_handler), &data);
 
   bus = gst_element_get_bus(data.pipeline);
@@ -250,15 +242,11 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, CustomData *dat
   new_pad_struct = gst_caps_get_structure (new_pad_caps, 0);
   new_pad_type = gst_structure_get_name (new_pad_struct);
 
-  if (g_str_equal (source_name, "demux_1") && (g_str_has_prefix (new_pad_type, "video"))) {
-      sink_pad = gst_element_get_static_pad (data->video_decodebin_1, "sink");
-  } else if (g_str_equal (source_name, "video_decodebin_1")) {
-    sink_pad = gst_element_get_static_pad (data->videoconvert_1, "sink");
-  } else if (g_str_equal (source_name, "demux_2") && (g_str_has_prefix (new_pad_type, "video"))) {
-    sink_pad = gst_element_get_static_pad (data->video_decodebin_2, "sink");
-  } else if (g_str_equal (source_name, "video_decodebin_2")) {
+  if (g_str_equal (source_name, "video_decodebin_1") && (g_str_has_prefix (new_pad_type, "video"))) {
+      sink_pad = gst_element_get_static_pad (data->videoconvert_1, "sink");
+  }  else if (g_str_equal (source_name, "video_decodebin_2") && (g_str_has_prefix (new_pad_type, "video"))) {
     sink_pad = gst_element_get_static_pad (data->videoconvert_2, "sink");
-  } else {
+  }  else {
     g_print ("It has type '%s' which is not supported. Ignoring.\n", new_pad_type);
     goto exit;
   }
